@@ -1,0 +1,900 @@
+{
+  "info": {
+    "name": "Nyaay AI — Full API Suite v2",
+    "description": "Complete Postman collection for the Nyaay AI FastAPI backend.\n\nBase URL defaults to localhost:8000. Change the base_url variable if your server runs elsewhere.\n\nCollection variables (auto-set by test scripts as you run requests in order):\n  base_url   → http://localhost:8000\n  api_key    → leave blank for dev (auth is skipped when API_KEY env var is unset)\n  session_id → auto-set by POST /questions\n  case_id    → auto-set by POST /intake/start\n\nRecommended order:\n  Run the '🔁 Full Flow' folder top-to-bottom for a complete happy-path walkthrough.\n  Individual folders let you test each resource in isolation.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",   "value": "http://localhost:8000", "type": "string" },
+    { "key": "api_key",    "value": "",                      "type": "string" },
+    { "key": "session_id", "value": "",                      "type": "string" },
+    { "key": "case_id",    "value": "",                      "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "1 — Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/health" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('status=healthy', () => pm.expect(b.status).to.eql('healthy'));",
+              "pm.test('api=claude',     () => pm.expect(b.api).to.eql('claude'));",
+              "pm.test('has timestamp',  () => pm.expect(b.timestamp).to.be.a('string'));"
+            ]}
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "2 — Chat (/questions)",
+      "item": [
+        {
+          "name": "POST /questions — personal injury (saves session_id)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/questions" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"My client Jane Doe was hit by John Smith who ran a red light at Broadway and 34th Street Manhattan on March 10 2025. She has a broken leg and $15,000 in medical bills.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has answer',          () => pm.expect(b.answer).to.be.a('string').and.not.empty);",
+              "pm.test('has session_id',      () => pm.expect(b.session_id).to.be.a('string').and.not.empty);",
+              "pm.test('has case_type',       () => pm.expect(b.case_type).to.be.a('string'));",
+              "pm.test('has offer_complaint', () => pm.expect(b.offer_complaint).to.be.a('boolean'));",
+              "pm.test('has required_elements', () => pm.expect(b.required_elements).to.be.an('array'));",
+              "pm.collectionVariables.set('session_id', b.session_id);",
+              "console.log('session_id saved:', b.session_id, '| case_type:', b.case_type, '| offer_complaint:', b.offer_complaint);"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /questions — follow-up (same session)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/questions" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"John Smith was driving a blue Toyota Camry, plate ABC-1234. Jane received treatment at Bellevue Hospital.\",\n  \"session_id\": \"{{session_id}}\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('same session_id', () => pm.expect(b.session_id).to.eql(pm.collectionVariables.get('session_id')));",
+              "console.log('offer_complaint:', b.offer_complaint, '| case_type:', b.case_type);"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /questions — employment dispute",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/questions" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"My client Marcus Lee was fired from Acme Corp in New York last week after he reported wage theft to HR. He had been a software engineer there since 2021 earning $95,000 per year.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('classified as employment', () => pm.expect(b.case_type).to.eql('employment_dispute'));"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /questions — ❌ empty question (422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/questions" },
+            "body": { "mode": "raw", "raw": "{\n  \"question\": \"   \"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /questions — ❌ non-NY jurisdiction (soft block)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/questions" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"I was in a car accident in California last week. What are my options?\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK (soft block — answer explains NY-only)', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('case_type=unsupported',  () => pm.expect(b.case_type).to.eql('unsupported'));",
+              "pm.test('offer_complaint=false',   () => pm.expect(b.offer_complaint).to.be.false);"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /questions — ❌ missing question field (422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/questions" },
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));"
+            ]}
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "3 — Sessions & History",
+      "item": [
+        {
+          "name": "GET /sessions — list all",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/sessions" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('returns array', () => pm.expect(b).to.be.an('array'));",
+              "if (b.length > 0) {",
+              "  pm.test('session has id',         () => pm.expect(b[0].id).to.be.a('string'));",
+              "  pm.test('session has title',       () => pm.expect(b[0].title).to.be.a('string'));",
+              "  pm.test('session has created_at',  () => pm.expect(b[0].created_at).to.be.a('string'));",
+              "}",
+              "console.log('Total sessions:', b.length);"
+            ]}
+          }]
+        },
+        {
+          "name": "GET /history/{session_id}",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/history/{{session_id}}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('returns array', () => pm.expect(b).to.be.an('array'));",
+              "if (b.length > 0) {",
+              "  pm.test('message has role',      () => pm.expect(b[0].role).to.be.a('string'));",
+              "  pm.test('message has content',   () => pm.expect(b[0].content).to.be.a('string'));",
+              "  pm.test('message has timestamp', () => pm.expect(b[0].timestamp).to.be.a('string'));",
+              "}",
+              "console.log('Messages in session:', b.length);"
+            ]}
+          }]
+        },
+        {
+          "name": "GET /history/{session_id} — ❌ unknown session (404)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/history/does-not-exist-000" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /history/{session_id}/clear",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/history/{{session_id}}/clear" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('has message field', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+            ]}
+          }]
+        },
+        {
+          "name": "DELETE /sessions/{session_id}",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/sessions/{{session_id}}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 or 404', () => pm.expect([200, 404]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "  pm.collectionVariables.set('session_id', '');",
+              "  console.log('Session deleted and session_id cleared.');",
+              "}"
+            ]}
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "4 — Intake",
+      "description": "All intake endpoints require Authorization: Bearer {{api_key}} in production. In dev mode (API_KEY env var unset), auth is skipped.",
+      "item": [
+        {
+          "name": "POST /intake/start — personal_injury (saves case_id)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}", "description": "Required in production. Leave blank for dev." }
+            ],
+            "url": { "raw": "{{base_url}}/intake/start" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"case_type\": \"personal_injury\",\n  \"initial_text\": \"Jane Doe was hit by John Smith who ran a red light at Broadway and 34th Street Manhattan on March 10 2025. She has a broken leg and $15,000 in medical bills. She was treated at Bellevue Hospital.\"\n}"
+            }
+          },
+          "event": [
+          {
+            "listen": "prerequest",
+            "script": { "exec": [
+              "const sid = pm.collectionVariables.get('session_id');",
+              "if (!sid) {",
+              "  console.warn('⚠️  session_id not set. Run \"POST /questions — personal injury\" first.');",
+              "}"
+            ]}
+          },
+          {
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has case_id',         () => pm.expect(b.case_id).to.be.a('string').and.not.empty);",
+              "pm.test('has case_type',        () => pm.expect(b.case_type).to.eql('personal_injury'));",
+              "pm.test('has is_complete',      () => pm.expect(b.is_complete).to.be.a('boolean'));",
+              "pm.test('has pre_filled',       () => pm.expect(b.pre_filled).to.be.an('object'));",
+              "pm.test('has missing_required', () => pm.expect(b.missing_required).to.be.an('array'));",
+              "pm.test('has missing_questions',() => pm.expect(b.missing_questions).to.be.an('array'));",
+              "pm.test('has sections_display', () => pm.expect(b.sections_display).to.be.an('object'));",
+              "pm.test('has validation',       () => pm.expect(b.validation).to.be.an('object'));",
+              "pm.test('validation has draft_readiness_score', () => pm.expect(b.validation.draft_readiness_score).to.be.a('number'));",
+              "pm.collectionVariables.set('case_id', b.case_id);",
+              "console.log('case_id saved:', b.case_id);",
+              "console.log('pre_filled keys:', Object.keys(b.pre_filled));",
+              "console.log('missing_required count:', b.missing_required.length);",
+              "console.log('readiness score:', b.validation.draft_readiness_score + '%');"
+            ]}
+          }
+          ]
+        },
+        {
+          "name": "POST /intake/start — ❌ invalid case_type (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/start" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"case_type\": \"alien_abduction\",\n  \"initial_text\": \"test\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+              "pm.test('error mentions case_type', () => pm.expect(pm.response.json().detail).to.include('alien_abduction'));"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /intake/{case_id}/provide — add more info",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/{{case_id}}/provide" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"The defendant John Smith lives at 100 Park Avenue New York NY. His insurance is with State Farm policy number SF-999-2025. Witness: Officer Mike Brown badge 4521.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has case_id',          () => pm.expect(b.case_id).to.be.a('string'));",
+              "pm.test('has validation',        () => pm.expect(b.validation).to.be.an('object'));",
+              "pm.test('has is_complete',       () => pm.expect(b.is_complete).to.be.a('boolean'));",
+              "console.log('is_complete:', b.is_complete, '| can_draft:', b.validation.can_draft, '| readiness:', b.validation.draft_readiness_score);"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /intake/{case_id}/provide — ❌ empty text (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/{{case_id}}/provide" },
+            "body": { "mode": "raw", "raw": "{\n  \"text\": \"   \"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('422 Unprocessable Entity', () => pm.response.to.have.status(422));"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /intake/{case_id}/provide — ❌ unknown case_id (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/does-not-exist-000/provide" },
+            "body": { "mode": "raw", "raw": "{\n  \"text\": \"some info\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+            ]}
+          }]
+        },
+        {
+          "name": "GET /intake/{case_id} — get current state",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/{{case_id}}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has case_id',          () => pm.expect(b.case_id).to.be.a('string'));",
+              "pm.test('has provided_fields',  () => pm.expect(b.provided_fields).to.be.an('object'));",
+              "pm.test('has sections_display', () => pm.expect(b.sections_display).to.be.an('object'));",
+              "pm.test('has is_complete',       () => pm.expect(b.is_complete).to.be.a('boolean'));",
+              "pm.test('has force_draft',       () => pm.expect(b.force_draft).to.be.a('boolean'));",
+              "console.log('provided_fields:', Object.keys(b.provided_fields).join(', '));"
+            ]}
+          }]
+        },
+        {
+          "name": "GET /intake/validate/{case_id}",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/validate/{{case_id}}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has is_valid',              () => pm.expect(b.is_valid).to.be.a('boolean'));",
+              "pm.test('has can_draft',             () => pm.expect(b.can_draft).to.be.a('boolean'));",
+              "pm.test('has issues array',          () => pm.expect(b.issues).to.be.an('array'));",
+              "pm.test('has draft_readiness_score', () => pm.expect(b.draft_readiness_score).to.be.a('number'));",
+              "console.log('is_valid:', b.is_valid, '| can_draft:', b.can_draft, '| score:', b.draft_readiness_score);"
+            ]}
+          }]
+        },
+        {
+          "name": "GET /case/{case_id}/progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/case/{{case_id}}/progress" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has progress %',        () => pm.expect(b.progress).to.be.a('string'));",
+              "pm.test('has fields_completed',  () => pm.expect(b.fields_completed).to.be.a('number'));",
+              "pm.test('has fields_total',      () => pm.expect(b.fields_total).to.be.a('number'));",
+              "pm.test('has required_completed',() => pm.expect(b.required_completed).to.be.a('number'));",
+              "pm.test('has missing_questions', () => pm.expect(b.missing_questions).to.be.an('array'));",
+              "console.log('Progress:', b.progress, b.fields_completed + '/' + b.fields_total,",
+              "  '| required:', b.required_completed + '/' + b.required_total);"
+            ]}
+          }]
+        },
+        {
+          "name": "PATCH /intake/{case_id}/force — proceed with missing fields",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/{{case_id}}/force" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('force_draft=true',  () => pm.expect(b.force_draft).to.be.true);",
+              "pm.test('has missing_count', () => pm.expect(b.missing_count).to.be.a('number'));",
+              "pm.test('has message',       () => pm.expect(b.message).to.be.a('string'));",
+              "console.log('Proceeding with', b.missing_count, 'missing fields as [UNKNOWN].');"
+            ]}
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "5 — Draft Complaint (Claude Sonnet)",
+      "description": "Requires Authorization: Bearer {{api_key}} in production.",
+      "item": [
+        {
+          "name": "POST /draft/{case_id} — generate complaint",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/draft/{{case_id}}" },
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has complaint text', () => pm.expect(b.complaint).to.be.a('string').and.not.empty);",
+              "pm.test('has word_count',     () => pm.expect(b.word_count).to.be.a('number').and.above(0));",
+              "pm.test('has unknown_count',  () => pm.expect(b.unknown_count).to.be.a('number'));",
+              "pm.test('has from_cache',     () => pm.expect(b.from_cache).to.be.a('boolean'));",
+              "pm.test('has case_type',      () => pm.expect(b.case_type).to.be.a('string'));",
+              "console.log('words:', b.word_count, '| [UNKNOWN] placeholders:', b.unknown_count, '| from_cache:', b.from_cache);",
+              "if (b.unknown_count > 0) {",
+              "  console.warn('⚠️  Complaint has', b.unknown_count, '[UNKNOWN] placeholder(s). Missing fields should be filled before filing.');",
+              "}"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /draft/{case_id} — re-request (returns from cache)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/draft/{{case_id}}" },
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK',           () => pm.response.to.have.status(200));",
+              "pm.test('served from cache',() => pm.expect(pm.response.json().from_cache).to.be.true);",
+              "console.log('Draft served from cache — no Claude API call made.');"
+            ]}
+          }]
+        },
+        {
+          "name": "GET /draft/{case_id} — retrieve cached draft",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/draft/{{case_id}}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('has complaint', () => pm.expect(pm.response.json().complaint).to.be.a('string').and.not.empty);",
+              "pm.test('from_cache is true', () => pm.expect(pm.response.json().from_cache).to.be.true);"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /draft/{case_id} — ❌ unknown case_id (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/draft/does-not-exist-000" },
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+            ]}
+          }]
+        },
+        {
+          "name": "GET /draft/{case_id} — ❌ no draft yet (404)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/draft/does-not-exist-000" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+            ]}
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "6 — Documents (DOCX + PDF)",
+      "description": "Requires Authorization: Bearer {{api_key}} in production. Responses are binary file downloads.",
+      "item": [
+        {
+          "name": "GET /document/{case_id}/status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/document/{{case_id}}/status" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('has case_id',       () => pm.expect(b.case_id).to.be.a('string'));",
+              "pm.test('has draft_exists',  () => pm.expect(b.draft_exists).to.be.a('boolean'));",
+              "pm.test('has case_type',     () => pm.expect(b.case_type).to.be.a('string'));",
+              "pm.test('has ready_to_export',() => pm.expect(b.ready_to_export).to.be.a('boolean'));",
+              "console.log('draft_exists:', b.draft_exists, '| word_count:', b.word_count, '| unknowns:', b.unknown_count);"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /document/{case_id} — download DOCX",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/document/{{case_id}}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attorney_name\": \"Jane Smith, Esq.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('DOCX content-type', () => {",
+              "  const ct = pm.response.headers.get('Content-Type') || '';",
+              "  pm.expect(ct).to.include('wordprocessingml');",
+              "});",
+              "pm.test('has Content-Disposition', () => {",
+              "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+              "  pm.expect(cd).to.include('attachment');",
+              "  pm.expect(cd).to.include('.docx');",
+              "});"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /document/{case_id} — DOCX (no attorney name)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/document/{{case_id}}" },
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('DOCX content-type', () => {",
+              "  const ct = pm.response.headers.get('Content-Type') || '';",
+              "  pm.expect(ct).to.include('wordprocessingml');",
+              "});",
+              "console.log('[ATTORNEY NAME] placeholder will appear in signature block.');"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /document/{case_id}/pdf — download PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/document/{{case_id}}/pdf" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attorney_name\": \"Jane Smith, Esq.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('PDF content-type', () => {",
+              "  const ct = pm.response.headers.get('Content-Type') || '';",
+              "  pm.expect(ct).to.include('pdf');",
+              "});",
+              "pm.test('has Content-Disposition', () => {",
+              "  const cd = pm.response.headers.get('Content-Disposition') || '';",
+              "  pm.expect(cd).to.include('attachment');",
+              "  pm.expect(cd).to.include('.pdf');",
+              "});"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /document/{case_id} — ❌ unknown case_id (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/document/does-not-exist-000" },
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+            ]}
+          }]
+        },
+        {
+          "name": "POST /document/{case_id}/pdf — ❌ unknown case_id (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/document/does-not-exist-000/pdf" },
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('404 Not Found', () => pm.response.to.have.status(404));"
+            ]}
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "🔁 Full Flow (run in order)",
+      "description": "End-to-end happy path for personal_injury. Run each request top-to-bottom. session_id and case_id are auto-saved as collection variables by the test scripts.\n\nAfter Step 5 (draft generated), Steps 6 and 7 are independent — run either or both.",
+      "item": [
+        {
+          "name": "Step 1 — Chat: describe injury (saves session_id)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/questions" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"My client Sarah Johnson was rear-ended by Michael Torres on 5th Ave and 42nd Street New York on February 15 2025. She suffered whiplash and a herniated disc. Medical bills are $22,000. Torres ran a red light.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.collectionVariables.set('session_id', b.session_id);",
+              "console.log('✅ Step 1 done | session_id:', b.session_id, '| offer_complaint:', b.offer_complaint, '| case_type:', b.case_type);"
+            ]}
+          }]
+        },
+        {
+          "name": "Step 2 — Chat: add details to trigger offer_complaint",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/questions" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Sarah has been to physical therapy 12 times. Torres has State Farm insurance. Please proceed with drafting.\",\n  \"session_id\": \"{{session_id}}\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "console.log('✅ Step 2 done | offer_complaint:', b.offer_complaint, '| case_type:', b.case_type);"
+            ]}
+          }]
+        },
+        {
+          "name": "Step 3 — Intake: start session (saves case_id)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/start" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"case_type\": \"personal_injury\",\n  \"initial_text\": \"Sarah Johnson was rear-ended by Michael Torres on 5th Ave and 42nd Street New York on February 15 2025. She suffered whiplash and a herniated disc. Medical bills are $22,000. Torres ran a red light.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.collectionVariables.set('case_id', b.case_id);",
+              "console.log('✅ Step 3 done | case_id:', b.case_id);",
+              "console.log('pre_filled:', Object.keys(b.pre_filled).join(', '));",
+              "console.log('missing_required count:', b.missing_required.length);",
+              "console.log('readiness:', b.validation.draft_readiness_score + '%');"
+            ]}
+          }]
+        },
+        {
+          "name": "Step 4 — Intake: force draft (bypass any remaining missing fields)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/intake/{{case_id}}/force" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "console.log('✅ Step 4 done | missing fields will be [UNKNOWN]:', b.missing_count);"
+            ]}
+          }]
+        },
+        {
+          "name": "Step 5 — Draft: generate complaint via Claude Sonnet",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/draft/{{case_id}}" },
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const b = pm.response.json();",
+              "pm.test('complaint is non-empty', () => pm.expect(b.complaint.length).to.be.above(100));",
+              "console.log('✅ Step 5 done | words:', b.word_count, '| [UNKNOWN]:', b.unknown_count, '| from_cache:', b.from_cache);"
+            ]}
+          }]
+        },
+        {
+          "name": "Step 6a — Document: download DOCX",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/document/{{case_id}}" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attorney_name\": \"Jane Smith, Esq.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const ct = pm.response.headers.get('Content-Type') || '';",
+              "pm.test('is DOCX', () => pm.expect(ct).to.include('wordprocessingml'));",
+              "console.log('✅ Step 6a done — DOCX downloaded!');"
+            ]}
+          }]
+        },
+        {
+          "name": "Step 6b — Document: download PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/document/{{case_id}}/pdf" },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attorney_name\": \"Jane Smith, Esq.\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "const ct = pm.response.headers.get('Content-Type') || '';",
+              "pm.test('is PDF', () => pm.expect(ct).to.include('pdf'));",
+              "console.log('✅ Step 6b done — PDF downloaded!');"
+            ]}
+          }]
+        }
+      ]
+    }
+
+  ]
+}

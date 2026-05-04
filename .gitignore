@@ -1,0 +1,8 @@
+chat_history.db
+app.log
+*.pyc
+__pycache__/
+venv/
+output.log
+.env
+node_modules/
