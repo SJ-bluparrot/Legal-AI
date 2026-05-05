@@ -438,6 +438,7 @@ def _build_intake_response(
             }
             for el in missing_optional
         ],
+        "provided_fields":  provided_fields,
         "sections_display": _build_sections_display(elements, sections, provided_fields),
         # Day 6 — validation result included in every response so the UI
         # can show live warnings and the "Generate Complaint" button state.
@@ -535,8 +536,44 @@ async def intake_start(request: IntakeStartRequest):
     )
 
     # ── Step 3: Persist to case_sessions ─────────────────────────────────────
-    case_id = str(uuid.uuid4())
-    now     = datetime.utcnow().isoformat()
+    # Reuse the row already created by _upsert_case_session in /questions if one
+    # exists for this chat session — merging any fields extracted there so data
+    # the user provided in the chat phase is not lost when intake starts.
+    now = datetime.utcnow().isoformat()
+
+    with get_db() as conn:
+        # Verify the parent chat session exists (soft guard — don't crash if not)
+        chat_row = conn.execute(
+            "SELECT id FROM sessions WHERE id = ?", (request.session_id,)
+        ).fetchone()
+        if not chat_row:
+            logger.warning(
+                f"Chat session '{request.session_id}' not found — "
+                f"creating case_session anyway (foreign key unenforced in SQLite)."
+            )
+
+        # Check for an existing row from the /questions flow
+        existing = conn.execute(
+            "SELECT * FROM case_sessions WHERE chat_session_id = ? ORDER BY created_at DESC LIMIT 1",
+            (request.session_id,)
+        ).fetchone()
+
+    if existing:
+        case_id = existing["case_id"]
+        prior = json.loads(existing["provided_fields"] or "{}") if existing["provided_fields"] else {}
+        prior.pop("__sources__", None)
+        # Merge: newly extracted fields win only when they have real values
+        for k, v in provided_fields.items():
+            if v and v != "[UNKNOWN]":
+                prior[k] = v
+        provided_fields = prior
+        logger.info(
+            f"[{req_id}] Intake start: reusing existing case_session {case_id}, "
+            f"merged {len(provided_fields)} fields from /questions flow."
+        )
+    else:
+        case_id = str(uuid.uuid4())
+        logger.info(f"[{req_id}] Intake start: no prior case_session found, created new {case_id}.")
 
     missing_required, _ = _compute_missing(elements, provided_fields)
     missing_field_ids   = [el["id"] for el in missing_required]
@@ -548,19 +585,9 @@ async def intake_start(request: IntakeStartRequest):
     provided_fields_with_meta = {**provided_fields, "__sources__": extracted_sources}
 
     with get_db() as conn:
-        # Verify the parent chat session exists (soft guard — don't crash if not)
-        row = conn.execute(
-            "SELECT id FROM sessions WHERE id = ?", (request.session_id,)
-        ).fetchone()
-        if not row:
-            logger.warning(
-                f"Chat session '{request.session_id}' not found — "
-                f"creating case_session anyway (foreign key unenforced in SQLite)."
-            )
-
         conn.execute(
             """
-            INSERT INTO case_sessions
+            INSERT OR REPLACE INTO case_sessions
               (case_id, chat_session_id, case_type,
                required_fields, provided_fields, missing_fields,
                force_draft, created_at, updated_at)

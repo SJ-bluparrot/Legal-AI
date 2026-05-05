@@ -1,1001 +1,897 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Nyaay · Legal Intelligence</title>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Nyaay AI · Legal Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode:"class",
+  theme:{extend:{
+    colors:{
+      "on-error-container":"#93000a","on-secondary":"#ffffff","on-tertiary":"#ffffff",
+      "secondary":"#006591","on-surface":"#0d1c2e","tertiary-fixed-dim":"#ffb68d",
+      "primary-fixed-dim":"#aec6ff","secondary-fixed-dim":"#89ceff",
+      "surface-container-highest":"#d5e3fc","on-surface-variant":"#424754",
+      "on-secondary-fixed-variant":"#004c6e","on-tertiary-container":"#fffbff",
+      "secondary-container":"#39b8fd","surface-container-high":"#dce9ff",
+      "surface-tint":"#005ac3","error":"#ba1a1a","primary":"#0058bf",
+      "on-primary":"#ffffff","tertiary-fixed":"#ffdbc9","on-error":"#ffffff",
+      "primary-container":"#1d70e7","tertiary-container":"#bd5700",
+      "on-background":"#0d1c2e","on-primary-container":"#fefcff",
+      "outline-variant":"#c2c6d6","outline":"#727785","on-primary-fixed":"#001a42",
+      "background":"#f8f9ff","on-secondary-fixed":"#001e2f",
+      "surface-container-low":"#eff4ff","surface":"#f8f9ff",
+      "secondary-fixed":"#c9e6ff","inverse-surface":"#233144",
+      "surface-dim":"#ccdbf3","inverse-primary":"#aec6ff","surface-bright":"#f8f9ff",
+      "tertiary":"#974400","on-primary-fixed-variant":"#004396",
+      "error-container":"#ffdad6","surface-container":"#e6eeff",
+      "surface-container-lowest":"#ffffff","on-tertiary-fixed":"#331200",
+      "primary-fixed":"#d8e2ff","surface-variant":"#d5e3fc",
+      "on-tertiary-fixed-variant":"#763300","inverse-on-surface":"#eaf1ff",
+      "on-secondary-container":"#004666"
+    },
+    borderRadius:{DEFAULT:"0.25rem",lg:"0.5rem",xl:"0.75rem",full:"9999px"},
+    spacing:{unit:"8px","margin-page":"40px","container-max":"1280px","stack-lg":"32px","stack-md":"16px",gutter:"24px","stack-sm":"8px"},
+    fontFamily:{"label-sm":["Manrope"],"headline-md":["Manrope"],"body-md":["Manrope"],"body-lg":["Manrope"],"headline-xl":["Manrope"],"label-md":["Manrope"],"headline-lg":["Manrope"]},
+    fontSize:{
+      "label-sm":["12px",{lineHeight:"1.2",fontWeight:"500"}],
+      "headline-md":["24px",{lineHeight:"1.4",fontWeight:"600"}],
+      "body-md":["16px",{lineHeight:"1.6",fontWeight:"400"}],
+      "body-lg":["18px",{lineHeight:"1.6",fontWeight:"400"}],
+      "headline-xl":["48px",{lineHeight:"1.2",letterSpacing:"-0.02em",fontWeight:"700"}],
+      "label-md":["14px",{lineHeight:"1.2",letterSpacing:"0.01em",fontWeight:"600"}],
+      "headline-lg":["32px",{lineHeight:"1.3",letterSpacing:"-0.01em",fontWeight:"600"}]
+    }
+  }}
+}
+</script>
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{
-  --ink:#0B0A08;--ink-2:#2C2A26;--ink-3:#5C5850;
-  --bg:#F5F3EE;--bg-2:#ECEAE4;--bg-3:#E2DFD8;
-  --gold:#B89040;--gold-l:#D4AC50;--gold-d:#8A6C2A;
-  --accent:#8B5E3C;--accent-l:#A87050;
-  --green:#2B6648;--green-l:#3A8560;--green-dim:rgba(43,102,72,.1);
-  --red:#8B2828;--red-l:#B03030;
-  --sidebar-w:64px;--drawer-w:260px;--panel-w:320px;
-  --radius:8px;--radius-l:14px;
-  --shadow:0 2px 12px rgba(11,10,8,.08);
-  --shadow-l:0 8px 32px rgba(11,10,8,.12);
-  --f-serif:'Cormorant Garamond',Georgia,serif;
-  --f-sans:'DM Sans',system-ui,sans-serif;
-  --f-mono:'Courier Prime',monospace;
-  --transition:200ms cubic-bezier(.4,0,.2,1);
-}
-html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--f-sans);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
-
-/* ── Layout shell ── */
-#shell{display:flex;height:100vh;overflow:hidden}
-
-/* ── Icon sidebar ── */
-#sidebar{
-  width:var(--sidebar-w);flex-shrink:0;
-  background:var(--ink);
-  display:flex;flex-direction:column;align-items:center;
-  padding:20px 0;gap:4px;
-  z-index:20;position:relative;
-}
-.sb-logo{
-  width:36px;height:36px;border-radius:10px;
-  background:var(--gold);display:flex;align-items:center;justify-content:center;
-  font-family:var(--f-serif);font-size:18px;font-weight:600;color:var(--ink);
-  margin-bottom:20px;cursor:pointer;user-select:none;flex-shrink:0;
-  letter-spacing:-.5px;
-}
-.sb-sep{width:28px;height:1px;background:rgba(255,255,255,.08);margin:8px 0}
-.sb-btn{
-  width:40px;height:40px;border-radius:var(--radius);
-  display:flex;align-items:center;justify-content:center;
-  cursor:pointer;transition:background var(--transition);
-  position:relative;color:rgba(255,255,255,.45);
-  border:none;background:transparent;
-}
-.sb-btn:hover{background:rgba(255,255,255,.08);color:rgba(255,255,255,.8)}
-.sb-btn.active{background:rgba(184,144,64,.18);color:var(--gold)}
-.sb-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
-.sb-spacer{flex:1}
-.sb-avatar{
-  width:32px;height:32px;border-radius:50%;
-  background:var(--gold);display:flex;align-items:center;justify-content:center;
-  font-family:var(--f-sans);font-size:11px;font-weight:600;color:var(--ink);
-  cursor:pointer;margin-top:12px;
-}
-
-/* ── Session drawer ── */
-#drawer{
-  width:var(--drawer-w);flex-shrink:0;
-  background:var(--bg-2);border-right:1px solid var(--bg-3);
-  display:flex;flex-direction:column;
-  transition:margin-left var(--transition),opacity var(--transition);
-  overflow:hidden;
-}
-#drawer.hidden{margin-left:calc(-1 * var(--drawer-w));opacity:0;pointer-events:none}
-.drawer-head{
-  padding:20px 16px 14px;
-  display:flex;align-items:center;justify-content:space-between;
-  border-bottom:1px solid var(--bg-3);flex-shrink:0;
-}
-.drawer-head h2{font-family:var(--f-serif);font-size:16px;font-weight:500;color:var(--ink);letter-spacing:.01em}
-.btn-new{
-  display:flex;align-items:center;gap:5px;
-  padding:5px 10px;border-radius:6px;
-  background:var(--ink);color:var(--bg);
-  border:none;cursor:pointer;font-family:var(--f-sans);font-size:12px;font-weight:500;
-  transition:background var(--transition);
-}
-.btn-new:hover{background:var(--ink-2)}
-.btn-new svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.5}
-#session-list{flex:1;overflow-y:auto;padding:10px 8px}
-#session-list::-webkit-scrollbar{width:4px}
-#session-list::-webkit-scrollbar-track{background:transparent}
-#session-list::-webkit-scrollbar-thumb{background:var(--bg-3);border-radius:4px}
-.sess-item{
-  padding:10px 10px;border-radius:var(--radius);cursor:pointer;
-  transition:background var(--transition);margin-bottom:2px;
-  display:flex;flex-direction:column;gap:2px;
-}
-.sess-item:hover{background:var(--bg-3)}
-.sess-item.active{background:var(--bg-3)}
-.sess-item .si-title{font-size:13px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sess-item .si-meta{font-size:11px;color:var(--ink-3)}
-.sess-empty{padding:24px 16px;text-align:center;color:var(--ink-3);font-size:12px}
-
-/* ── Main chat area ── */
-#main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
-
-/* ── Top bar ── */
-#topbar{
-  height:54px;padding:0 20px;flex-shrink:0;
-  display:flex;align-items:center;justify-content:space-between;
-  background:var(--bg);border-bottom:1px solid var(--bg-3);
-}
-.topbar-left{display:flex;align-items:center;gap:12px}
-.topbar-toggle{
-  width:30px;height:30px;border-radius:6px;display:flex;align-items:center;justify-content:center;
-  cursor:pointer;border:none;background:transparent;color:var(--ink-3);transition:all var(--transition);
-}
-.topbar-toggle:hover{background:var(--bg-2);color:var(--ink)}
-.topbar-toggle svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.75}
-.topbar-title{font-family:var(--f-serif);font-size:17px;font-weight:500;color:var(--ink);letter-spacing:.01em}
-.topbar-right{display:flex;align-items:center;gap:8px}
-#status-badge{
-  display:flex;align-items:center;gap:6px;
-  padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;
-  background:var(--bg-2);color:var(--ink-3);border:1px solid var(--bg-3);
-  transition:all var(--transition);
-}
-#status-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3);transition:background var(--transition)}
-#status-badge.ready .dot{background:var(--green)}
-#status-badge.ready{color:var(--green);background:var(--green-dim);border-color:rgba(43,102,72,.2)}
-#status-badge.drafting .dot{background:var(--gold);animation:pulse 1.2s infinite}
-#status-badge.drafting{color:var(--gold-d);background:rgba(184,144,64,.08);border-color:rgba(184,144,64,.2)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-
-/* ── Chat messages ── */
-#chat-scroll{flex:1;overflow-y:auto;padding:28px 0}
-#chat-scroll::-webkit-scrollbar{width:5px}
-#chat-scroll::-webkit-scrollbar-track{background:transparent}
-#chat-scroll::-webkit-scrollbar-thumb{background:var(--bg-3);border-radius:4px}
-#messages{max-width:700px;margin:0 auto;padding:0 24px;display:flex;flex-direction:column;gap:20px}
-
-/* Welcome screen */
-#welcome{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  min-height:60vh;text-align:center;gap:20px;
-  animation:fadeUp .5s ease both;
-}
-#welcome .w-icon{
-  width:72px;height:72px;border-radius:20px;
-  background:linear-gradient(135deg,var(--gold) 0%,var(--accent) 100%);
-  display:flex;align-items:center;justify-content:center;
-  font-family:var(--f-serif);font-size:34px;font-weight:600;color:white;
-  box-shadow:0 16px 40px rgba(184,144,64,.25);
-}
-#welcome h1{font-family:var(--f-serif);font-size:36px;font-weight:400;color:var(--ink);letter-spacing:-.5px;line-height:1.2}
-#welcome h1 em{font-style:italic;color:var(--gold)}
-#welcome p{max-width:380px;color:var(--ink-3);font-size:14px;line-height:1.7}
-.starter-pills{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:500px}
-.pill{
-  padding:7px 14px;border-radius:20px;border:1px solid var(--bg-3);
-  background:var(--bg);color:var(--ink-2);font-size:12px;cursor:pointer;
-  transition:all var(--transition);font-family:var(--f-sans);
-}
-.pill:hover{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-
-/* Message bubbles */
-.msg{display:flex;gap:12px;animation:fadeUp .25s ease both}
-.msg.user{flex-direction:row-reverse}
-.msg-avatar{
-  width:30px;height:30px;border-radius:50%;flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;margin-top:2px;
-}
-.msg.ai .msg-avatar{background:var(--ink);color:var(--gold);font-family:var(--f-serif)}
-.msg.user .msg-avatar{background:var(--gold);color:var(--ink)}
-.msg-body{max-width:85%}
-.msg-name{font-size:11px;font-weight:500;color:var(--ink-3);margin-bottom:4px;padding:0 2px}
-.msg.user .msg-name{text-align:right}
-.msg-bubble{
-  padding:11px 15px;border-radius:var(--radius-l);line-height:1.65;font-size:14px;
-}
-.msg.ai .msg-bubble{
-  background:white;border:1px solid var(--bg-3);color:var(--ink);
-  border-radius:4px var(--radius-l) var(--radius-l) var(--radius-l);
-  box-shadow:var(--shadow);
-}
-.msg.user .msg-bubble{
-  background:var(--ink);color:var(--bg);
-  border-radius:var(--radius-l) 4px var(--radius-l) var(--radius-l);
-}
-.msg.system .msg-bubble{
-  background:rgba(184,144,64,.08);border:1px solid rgba(184,144,64,.2);
-  color:var(--gold-d);font-size:12px;border-radius:var(--radius);
-  display:flex;align-items:center;gap:8px;
-}
-.msg.system .msg-avatar{display:none}
-.msg.system{justify-content:center}
-.msg.system .msg-body{max-width:100%}
-.msg-bubble strong{font-weight:600}
-.msg-bubble p+p{margin-top:.5em}
-
-/* Typing indicator */
-#typing{display:none;padding:0 24px;max-width:700px;margin:0 auto}
-.typing-dots{display:flex;gap:4px;padding:12px 15px;background:white;border:1px solid var(--bg-3);border-radius:4px var(--radius-l) var(--radius-l) var(--radius-l);width:fit-content;box-shadow:var(--shadow)}
-.typing-dots span{width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
-.typing-dots span:nth-child(1){animation:bounce .9s ease infinite 0s}
-.typing-dots span:nth-child(2){animation:bounce .9s ease infinite .15s}
-.typing-dots span:nth-child(3){animation:bounce .9s ease infinite .3s}
-@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-6px)}}
-
-/* ── Input area ── */
-#input-area{
-  flex-shrink:0;padding:16px 24px 20px;
-  background:var(--bg);border-top:1px solid var(--bg-3);
-}
-#input-wrap{
-  max-width:700px;margin:0 auto;
-  background:white;border:1.5px solid var(--bg-3);border-radius:14px;
-  display:flex;align-items:flex-end;gap:0;
-  transition:border-color var(--transition),box-shadow var(--transition);
-  box-shadow:var(--shadow);
-}
-#input-wrap:focus-within{border-color:var(--gold);box-shadow:0 0 0 3px rgba(184,144,64,.12)}
-#msg-input{
-  flex:1;border:none;background:transparent;padding:13px 16px;
-  font-family:var(--f-sans);font-size:14px;color:var(--ink);resize:none;
-  outline:none;max-height:160px;min-height:48px;line-height:1.5;
-  scrollbar-width:none;
-}
-#msg-input::placeholder{color:var(--ink-3)}
-#send-btn{
-  width:40px;height:40px;margin:4px;border-radius:10px;
-  background:var(--ink);color:var(--bg);border:none;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;
-  transition:all var(--transition);
-}
-#send-btn:hover{background:var(--gold)}
-#send-btn:disabled{background:var(--bg-3);cursor:not-allowed}
-#send-btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.input-hint{max-width:700px;margin:6px auto 0;font-size:11px;color:var(--ink-3);text-align:center}
-
-/* ── Right panel ── */
-#panel{
-  width:var(--panel-w);flex-shrink:0;
-  background:var(--bg-2);border-left:1px solid var(--bg-3);
-  display:flex;flex-direction:column;
-  transition:margin-right var(--transition),opacity var(--transition);
-  overflow:hidden;
-}
-#panel.hidden{margin-right:calc(-1 * var(--panel-w));opacity:0;pointer-events:none}
-#panel-head{padding:20px 18px 14px;border-bottom:1px solid var(--bg-3);flex-shrink:0}
-#panel-head h2{font-family:var(--f-serif);font-size:16px;font-weight:500;color:var(--ink)}
-#panel-head .ph-sub{font-size:11px;color:var(--ink-3);margin-top:2px}
-#panel-body{flex:1;overflow-y:auto;padding:16px}
-#panel-body::-webkit-scrollbar{width:3px}
-#panel-body::-webkit-scrollbar-thumb{background:var(--bg-3);border-radius:3px}
-
-/* Panel sections */
-.p-section{margin-bottom:20px}
-.p-section-title{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px}
-.p-case-type{
-  display:flex;align-items:center;gap:8px;
-  padding:10px 12px;background:white;border-radius:var(--radius);border:1px solid var(--bg-3);
-}
-.p-case-type .ct-badge{
-  padding:2px 8px;background:var(--ink);color:var(--gold);
-  border-radius:4px;font-family:var(--f-mono);font-size:10px;letter-spacing:.03em;white-space:nowrap;
-}
-.p-case-type .ct-label{font-size:12px;color:var(--ink-2);font-weight:500}
-
-/* Progress bar */
-.progress-wrap{margin-bottom:20px}
-.progress-label{display:flex;justify-content:space-between;margin-bottom:6px}
-.progress-label span{font-size:11px;color:var(--ink-3)}
-.progress-label strong{font-size:11px;color:var(--green);font-weight:600}
-.progress-track{height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden}
-.progress-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--green-l));border-radius:3px;transition:width .5s cubic-bezier(.4,0,.2,1)}
-
-/* Field chips */
-.field-list{display:flex;flex-direction:column;gap:5px}
-.field-row{
-  display:flex;align-items:flex-start;gap:8px;
-  padding:7px 10px;border-radius:6px;background:white;border:1px solid var(--bg-3);
-}
-.field-row.filled .f-dot{background:var(--green)}
-.field-row.missing .f-dot{background:var(--bg-3)}
-.f-dot{width:6px;height:6px;border-radius:50%;margin-top:4px;flex-shrink:0}
-.f-content{min-width:0}
-.f-label{font-size:11px;font-weight:500;color:var(--ink-3);margin-bottom:1px}
-.f-value{font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.f-value.empty{color:var(--ink-3);font-style:italic}
-
-/* Generate / action buttons */
-#panel-footer{padding:14px 16px;border-top:1px solid var(--bg-3);flex-shrink:0;display:flex;flex-direction:column;gap:8px}
-#gen-btn{
-  width:100%;padding:12px;border-radius:var(--radius);border:none;cursor:pointer;
-  font-family:var(--f-sans);font-size:13px;font-weight:600;letter-spacing:.01em;
-  background:var(--green);color:white;transition:all var(--transition);
-  display:flex;align-items:center;justify-content:center;gap:7px;
-}
-#gen-btn:hover:not(:disabled){background:var(--green-l);transform:translateY(-1px);box-shadow:0 4px 14px rgba(43,102,72,.3)}
-#gen-btn:disabled{background:var(--bg-3);color:var(--ink-3);cursor:not-allowed;transform:none;box-shadow:none}
-#gen-btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.5}
-#force-btn{
-  width:100%;padding:8px;border-radius:var(--radius);border:1px solid var(--bg-3);cursor:pointer;
-  font-family:var(--f-sans);font-size:12px;color:var(--ink-3);background:transparent;
-  transition:all var(--transition);display:none;
-}
-#force-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(139,94,60,.04)}
-
-/* Complaint view */
-#complaint-card{
-  background:white;border:1px solid var(--bg-3);border-radius:var(--radius);
-  overflow:hidden;display:none;
-}
-#complaint-card .cc-head{
-  padding:12px 14px;border-bottom:1px solid var(--bg-3);
-  display:flex;align-items:center;justify-content:space-between;
-}
-#complaint-card .cc-head span{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
-.cc-actions{display:flex;gap:6px}
-.cc-btn{
-  padding:4px 10px;border-radius:5px;border:1px solid var(--bg-3);
-  font-family:var(--f-sans);font-size:11px;font-weight:500;cursor:pointer;
-  background:transparent;color:var(--ink-2);transition:all var(--transition);
-}
-.cc-btn:hover{background:var(--bg-3);color:var(--ink)}
-.cc-btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.cc-btn.primary:hover{background:var(--gold);border-color:var(--gold)}
-#complaint-text{
-  padding:14px;max-height:260px;overflow-y:auto;
-  font-family:var(--f-mono);font-size:11.5px;line-height:1.8;color:var(--ink-2);
-  white-space:pre-wrap;
-}
-#complaint-text::-webkit-scrollbar{width:3px}
-#complaint-text::-webkit-scrollbar-thumb{background:var(--bg-3)}
-
-/* Animations */
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-@keyframes slideIn{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
-
-/* ── Draft overlay spinner ── */
-#draft-overlay{
-  display:none;position:absolute;inset:0;
-  background:rgba(245,243,238,.92);backdrop-filter:blur(4px);
-  z-index:10;flex-direction:column;align-items:center;justify-content:center;gap:20px;
-}
-#draft-overlay.show{display:flex}
-.draft-spinner{width:48px;height:48px;border-radius:50%;border:3px solid var(--bg-3);border-top-color:var(--gold);animation:spin 1s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.draft-label{font-family:var(--f-serif);font-size:18px;color:var(--ink-2);font-style:italic}
-.draft-sub{font-size:12px;color:var(--ink-3)}
-
-/* Panel empty state */
-#panel-empty{
-  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:12px;text-align:center;padding:24px;color:var(--ink-3);
-}
-#panel-empty svg{width:40px;height:40px;stroke:currentColor;fill:none;stroke-width:1.25;opacity:.4}
-#panel-empty p{font-size:12px;line-height:1.7;max-width:200px}
-
-/* Notification toast */
-#toast{
-  position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
-  background:var(--ink);color:var(--bg);padding:9px 18px;border-radius:20px;
-  font-size:12px;font-weight:500;opacity:0;transition:all .3s ease;z-index:100;pointer-events:none;
-  white-space:nowrap;
-}
-#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-
-/* Responsive adjustments */
-@media(max-width:960px){#panel{display:none}}
-@media(max-width:700px){#drawer{display:none}#panel{display:none}}
+body{font-family:'Manrope',sans-serif;}
+.material-symbols-outlined{font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;font-size:24px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-smoothing:antialiased;}
+.hidden{display:none!important;}
+textarea{resize:none;}
+#chat-messages{scroll-behavior:smooth;}
+.dot{width:8px;height:8px;border-radius:50%;background:#0058bf;display:inline-block;animation:bounce 1.2s infinite;}
+.dot:nth-child(2){animation-delay:.2s;}
+.dot:nth-child(3){animation-delay:.4s;}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);}30%{transform:translateY(-5px);}}
+.pbar-t{transition:width .5s ease;}
+/* Markdown prose styles inside AI bubbles */
+.md-prose h1,.md-prose h2{font-size:18px;font-weight:700;margin:12px 0 6px;}
+.md-prose h3{font-size:16px;font-weight:600;margin:10px 0 4px;}
+.md-prose p{margin:0 0 8px;}
+.md-prose p:last-child{margin-bottom:0;}
+.md-prose ul{list-style:disc;padding-left:20px;margin:6px 0;}
+.md-prose ol{list-style:decimal;padding-left:20px;margin:6px 0;}
+.md-prose li{margin:3px 0;}
+.md-prose strong{font-weight:700;}
+.md-prose em{font-style:italic;}
+.md-prose code{background:rgba(0,0,0,0.07);padding:1px 5px;border-radius:4px;font-size:13px;font-family:monospace;}
+.md-prose pre{background:rgba(0,0,0,0.07);padding:10px;border-radius:6px;overflow-x:auto;margin:8px 0;}
+.md-prose pre code{background:none;padding:0;}
+.md-prose hr{border:none;border-top:1px solid rgba(0,0,0,0.1);margin:10px 0;}
+.md-prose blockquote{border-left:3px solid #c2c6d6;padding-left:12px;color:#424754;margin:8px 0;}
 </style>
 </head>
-<body>
-<div id="shell">
+<body class="bg-background text-on-surface h-screen overflow-hidden flex">
 
-  <!-- Icon Sidebar -->
-  <nav id="sidebar">
-    <div class="sb-logo" onclick="toggleDrawer()" title="Nyaay">N</div>
-    <button class="sb-btn active" title="Chat" onclick="setSbActive(this)">
-      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-    </button>
-    <div class="sb-sep"></div>
-    <button class="sb-btn" title="Documents" onclick="setSbActive(this)">
-      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-    </button>
-    <button class="sb-btn" title="Settings" onclick="setSbActive(this)">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-    </button>
-    <div class="sb-spacer"></div>
-    <div class="sb-avatar" title="Attorney">A</div>
+<!-- ══════════════════════════════════════════════ -->
+<!-- SIDEBAR                                        -->
+<!-- ══════════════════════════════════════════════ -->
+<nav class="fixed left-0 top-0 h-screen w-64 flex flex-col p-4 z-40 bg-slate-50 border-r border-slate-200">
+  <div class="mb-8 px-2 flex items-center space-x-3">
+    <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+      <span class="material-symbols-outlined text-white text-[18px]" style="font-variation-settings:'FILL' 1">balance</span>
+    </div>
+    <div>
+      <div class="font-extrabold text-blue-600 text-base leading-tight">Nyaay AI</div>
+      <div class="text-xs text-slate-500 font-medium">Institutional Partner</div>
+    </div>
+  </div>
+  <button id="btn-new" class="mb-6 w-full bg-blue-600 text-white hover:bg-blue-700 transition-colors rounded-lg py-2.5 px-4 flex items-center justify-center space-x-2 shadow-sm font-label-md text-label-md">
+    <span class="material-symbols-outlined text-[18px]">add</span><span>New Research Session</span>
+  </button>
+  <nav class="flex-1 space-y-1">
+    <div onclick="showWelcome()" class="flex items-center space-x-3 p-3 cursor-pointer text-slate-600 hover:bg-white hover:text-blue-600 transition-all rounded-lg">
+      <span class="material-symbols-outlined">grid_view</span><span class="font-label-md text-label-md">Dashboard</span>
+    </div>
+    <div class="flex items-center space-x-3 p-3 cursor-pointer text-slate-600 hover:bg-white hover:text-blue-600 transition-all rounded-lg">
+      <span class="material-symbols-outlined">gavel</span><span class="font-label-md text-label-md">Active Cases</span>
+    </div>
+    <div class="flex items-center space-x-3 p-3 cursor-pointer text-slate-600 hover:bg-white hover:text-blue-600 transition-all rounded-lg">
+      <span class="material-symbols-outlined">manage_search</span><span class="font-label-md text-label-md">Discovery</span>
+    </div>
+    <div class="flex items-center space-x-3 p-3 cursor-pointer text-slate-600 hover:bg-white hover:text-blue-600 transition-all rounded-lg">
+      <span class="material-symbols-outlined">book_2</span><span class="font-label-md text-label-md">Legal Library</span>
+    </div>
   </nav>
-
-  <!-- Session Drawer -->
-  <div id="drawer">
-    <div class="drawer-head">
-      <h2>Matters</h2>
-      <button class="btn-new" onclick="newChat()">
-        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        New
-      </button>
+  <div class="mt-4 border-t border-slate-200 pt-3">
+    <p class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold px-3 mb-2">Recent Sessions</p>
+    <div id="session-list" class="space-y-0.5 max-h-44 overflow-y-auto"></div>
+  </div>
+  <div class="mt-4 border-t border-slate-200 pt-4 space-y-1">
+    <div class="flex items-center space-x-3 p-3 cursor-pointer text-slate-600 hover:bg-white hover:text-blue-600 transition-all rounded-lg">
+      <span class="material-symbols-outlined">history</span><span class="font-label-md text-label-md">History</span>
     </div>
-    <div id="session-list">
-      <div class="sess-empty">No prior sessions.<br>Start a new matter above.</div>
+    <div class="flex items-center space-x-3 p-3 cursor-pointer text-slate-600 hover:bg-white hover:text-blue-600 transition-all rounded-lg">
+      <span class="material-symbols-outlined">person</span><span class="font-label-md text-label-md">Account</span>
     </div>
   </div>
+</nav>
 
-  <!-- Main Chat -->
-  <div id="main">
-    <!-- Topbar -->
-    <div id="topbar">
-      <div class="topbar-left">
-        <button class="topbar-toggle" onclick="toggleDrawer()" title="Toggle sessions">
-          <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-        </button>
-        <span class="topbar-title">Nyaay</span>
-      </div>
-      <div class="topbar-right">
-        <div id="status-badge">
-          <div class="dot"></div>
-          <span id="status-text">New matter</span>
+<!-- ══════════════════════════════════════════════ -->
+<!-- SCREEN 1: WELCOME                             -->
+<!-- ══════════════════════════════════════════════ -->
+<main id="screen-welcome" class="ml-64 flex-1 h-screen flex flex-col bg-surface-bright overflow-hidden">
+  <div class="flex-1 flex flex-col justify-center max-w-5xl mx-auto w-full px-12">
+    <div class="text-center mb-12">
+      <h2 class="font-headline-xl text-headline-xl text-on-surface mb-4">Good Morning, Counselor.</h2>
+      <p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl mx-auto">How can I assist you with your legal research or document analysis today?</p>
+    </div>
+    <div class="grid grid-cols-3 gap-6 mb-12">
+      <div onclick="prefill('Help me analyze a contract dispute between my client and a vendor who failed to deliver on their agreement in New York.')" class="group relative bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-all duration-300 hover:border-primary-fixed">
+        <div class="h-28 w-full bg-surface-container flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-5xl">description</span>
         </div>
-        <button class="topbar-toggle" onclick="togglePanel()" title="Toggle case panel">
-          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Draft overlay -->
-    <div id="draft-overlay">
-      <div class="draft-spinner"></div>
-      <div class="draft-label">Drafting complaint…</div>
-      <div class="draft-sub">Claude Sonnet is composing your document</div>
-    </div>
-
-    <!-- Messages -->
-    <div id="chat-scroll">
-      <div id="messages">
-        <div id="welcome">
-          <div class="w-icon">N</div>
-          <h1>Good day, Counsellor.<br><em>How can I assist?</em></h1>
-          <p>Describe your client's situation in plain language. I'll analyze the legal position and help prepare the complaint.</p>
-          <div class="starter-pills">
-            <div class="pill" onclick="usePill(this)">My client slipped and fell at a grocery store</div>
-            <div class="pill" onclick="usePill(this)">Wrongful termination — hostile work environment</div>
-            <div class="pill" onclick="usePill(this)">Contractor breached the agreement, refused to pay</div>
-            <div class="pill" onclick="usePill(this)">Government seized property without fair compensation</div>
-          </div>
+        <div class="p-5 flex items-center justify-between">
+          <span class="font-label-md text-label-md text-on-surface group-hover:text-primary transition-colors">Contract Dispute Review</span>
+          <span class="material-symbols-outlined text-[18px] text-primary opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward</span>
         </div>
       </div>
-      <div id="typing" style="display:none">
-        <div class="typing-dots"><span></span><span></span><span></span></div>
+      <div onclick="prefill('My client was injured in a car accident in New York. The other driver ran a red light and hit them. I need to assess their personal injury claim.')" class="group relative bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-all duration-300 hover:border-primary-fixed">
+        <div class="h-28 w-full bg-surface-container flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-5xl">local_hospital</span>
+        </div>
+        <div class="p-5 flex items-center justify-between">
+          <span class="font-label-md text-label-md text-on-surface group-hover:text-primary transition-colors">Analyze Personal Injury</span>
+          <span class="material-symbols-outlined text-[18px] text-primary opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward</span>
+        </div>
       </div>
-    </div>
-
-    <!-- Input -->
-    <div id="input-area">
-      <div id="input-wrap">
-        <textarea id="msg-input" rows="1" placeholder="Describe the matter…" onkeydown="handleKey(event)" oninput="autoGrow(this)"></textarea>
-        <button id="send-btn" onclick="send()" title="Send (Enter)">
-          <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
+      <div onclick="prefill('I need help with an employment dispute in New York involving wrongful termination. My client was fired without cause after 5 years.')" class="group relative bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden cursor-pointer hover:shadow-md transition-all duration-300 hover:border-primary-fixed">
+        <div class="h-28 w-full bg-surface-container flex items-center justify-center">
+          <span class="material-symbols-outlined text-primary text-5xl">manage_search</span>
+        </div>
+        <div class="p-5 flex items-center justify-between">
+          <span class="font-label-md text-label-md text-on-surface group-hover:text-primary transition-colors">Case Precedent Search</span>
+          <span class="material-symbols-outlined text-[18px] text-primary opacity-0 group-hover:opacity-100 transition-opacity">arrow_forward</span>
+        </div>
       </div>
-      <div class="input-hint">New York jurisdiction · Attorney use only</div>
     </div>
   </div>
-
-  <!-- Right Panel -->
-  <aside id="panel">
-    <div id="panel-head">
-      <h2>Case Intelligence</h2>
-      <div class="ph-sub">Real-time field extraction</div>
-    </div>
-
-    <div id="panel-empty" style="display:flex">
-      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-      <p>Start a conversation to see case fields extracted in real time.</p>
-    </div>
-
-    <div id="panel-body" style="display:none">
-      <div class="p-section">
-        <div class="p-section-title">Case Classification</div>
-        <div class="p-case-type" id="p-case-type">
-          <span class="ct-badge">—</span>
-          <span class="ct-label">Awaiting classification</span>
+  <div class="w-full max-w-4xl mx-auto pb-8 px-12">
+    <div class="bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-primary-fixed focus-within:border-primary transition-all">
+      <div class="flex items-end p-2 min-h-[64px]">
+        <textarea id="welcome-input" rows="1" placeholder="Ask a legal question, describe your client's case, or search precedents..."
+          class="flex-1 bg-transparent border-none focus:ring-0 font-body-md text-body-md text-on-surface placeholder-on-surface-variant/60 py-3 px-2 max-h-32"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitWelcome()}"></textarea>
+        <div class="flex items-center gap-2 p-2 flex-shrink-0">
+          <button onclick="submitWelcome()" class="w-10 h-10 bg-primary text-on-primary rounded-full flex items-center justify-center hover:bg-surface-tint shadow-sm transition-all active:scale-95">
+            <span class="material-symbols-outlined text-[20px]" style="font-variation-settings:'FILL' 1">send</span>
+          </button>
         </div>
       </div>
-      <div class="p-section">
-        <div class="p-section-title">Field Collection</div>
-        <div class="progress-wrap">
-          <div class="progress-label">
-            <span>Progress</span>
-            <strong id="p-pct">0%</strong>
-          </div>
-          <div class="progress-track"><div class="progress-fill" id="p-bar" style="width:0%"></div></div>
-        </div>
-        <div class="field-list" id="p-fields"></div>
-      </div>
-      <div id="complaint-card">
-        <div class="cc-head">
-          <span>Draft Complaint</span>
-          <div class="cc-actions">
-            <button class="cc-btn" onclick="copyCmp()">Copy</button>
-            <button class="cc-btn" onclick="dlDOCX()">DOCX</button>
-            <button class="cc-btn primary" onclick="dlPDF()">PDF</button>
-          </div>
-        </div>
-        <div id="complaint-text"></div>
+    </div>
+    <p class="text-center mt-3 text-xs text-outline">Nyaay AI is an institutional research tool. Always verify legal citations.</p>
+  </div>
+</main>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- SCREEN 3: ACTIVE CHAT / INTAKE                -->
+<!-- ══════════════════════════════════════════════ -->
+<main id="screen-chat" class="hidden ml-64 flex-1 flex flex-col h-screen overflow-hidden bg-surface-bright">
+  <header class="h-20 px-8 flex items-center justify-between border-b border-outline-variant bg-surface-container-lowest shrink-0">
+    <div>
+      <h2 id="chat-title" class="font-headline-lg text-headline-lg text-on-surface" style="font-size:22px">New Consultation</h2>
+      <div class="flex items-center space-x-2 mt-1">
+        <span id="chat-badge" class="hidden bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm px-2 py-1 rounded"></span>
       </div>
     </div>
-
-    <div id="panel-footer">
-      <button id="gen-btn" disabled onclick="generate()">
-        <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-        Generate Complaint
+    <div class="flex items-center space-x-3">
+      <button id="btn-generate" class="hidden bg-primary text-on-primary font-label-md text-label-md px-5 py-2.5 rounded-lg hover:bg-primary-container hover:shadow-md transition-all flex items-center space-x-2" onclick="handleGenerate()">
+        <span class="material-symbols-outlined text-[18px]">description</span><span>Generate Complaint</span>
       </button>
-      <button id="force-btn" onclick="forceGen()">Draft with missing fields →</button>
     </div>
-  </aside>
+  </header>
+  <div class="flex-1 flex overflow-hidden">
+    <!-- Chat -->
+    <div class="flex-1 flex flex-col h-full bg-surface-container-lowest">
+      <div id="chat-messages" class="flex-1 overflow-y-auto p-8 space-y-6"></div>
+      <div id="typing" class="hidden px-8 pb-2">
+        <div class="flex items-start space-x-4 max-w-3xl">
+          <div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center shrink-0">
+            <span class="material-symbols-outlined text-on-primary-container text-sm">smart_toy</span>
+          </div>
+          <div class="flex items-center pt-3 space-x-1">
+            <span class="text-xs text-outline mr-2">Analyzing</span>
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+        </div>
+      </div>
+      <div id="err-banner" class="hidden mx-8 mb-2 p-3 bg-error-container text-on-error-container rounded-lg text-sm font-medium flex items-center space-x-2">
+        <span class="material-symbols-outlined text-[16px]">error</span><span id="err-text"></span>
+      </div>
+      <div class="p-6 bg-surface-container-lowest border-t border-outline-variant shrink-0">
+        <div class="max-w-4xl mx-auto">
+          <div class="bg-surface rounded-xl border border-outline-variant focus-within:ring-2 focus-within:ring-primary focus-within:border-primary transition-shadow">
+            <div class="flex items-end p-2">
+              <textarea id="chat-input" rows="1" placeholder="Type client details, answer questions, or continue the discussion..."
+                class="flex-1 bg-transparent border-none focus:ring-0 font-body-md text-body-md text-on-surface placeholder-outline py-2 px-2 max-h-32"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();submitChat()}"></textarea>
+              <button onclick="submitChat()" class="p-2 bg-primary text-on-primary rounded-lg shadow-sm hover:bg-blue-700 transition-colors flex-shrink-0">
+                <span class="material-symbols-outlined text-[20px]" style="font-variation-settings:'FILL' 1">send</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Right Panel -->
+    <div class="w-80 border-l border-outline-variant bg-surface-container-lowest h-full overflow-y-auto shrink-0 flex flex-col">
+      <div class="p-6 border-b border-outline-variant shrink-0">
+        <h3 class="text-on-surface mb-4 flex items-center space-x-2" style="font-size:18px;font-weight:600">
+          <span class="material-symbols-outlined text-primary">fact_check</span><span>Case Elements</span>
+        </h3>
+        <div class="space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Intake Progress</span>
+            <span id="pct" class="font-label-md text-label-md text-primary">0%</span>
+          </div>
+          <div class="h-2 w-full bg-surface-variant rounded-full overflow-hidden">
+            <div id="pbar" class="h-full bg-primary rounded-full pbar-t" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+      <div class="p-6 flex-1">
+        <h4 class="font-label-md text-label-md text-on-surface mb-4">Required Legal Fields</h4>
+        <ul id="checklist" class="space-y-4">
+          <li class="flex items-center space-x-3">
+            <span class="material-symbols-outlined text-outline text-[18px]">radio_button_unchecked</span>
+            <span class="font-label-sm text-label-sm text-outline italic">Awaiting case description...</span>
+          </li>
+        </ul>
+      </div>
+      <div class="p-6 border-t border-outline-variant bg-surface shrink-0">
+        <button id="btn-force" class="hidden w-full py-2 px-4 border border-error text-error font-label-md text-label-md rounded-lg hover:bg-error-container transition-colors text-sm mb-2" onclick="forceDraft()">
+          Proceed with Missing Fields
+        </button>
+        <p id="panel-hint" class="text-xs text-outline text-center">Collecting case information...</p>
+      </div>
+    </div>
+  </div>
+</main>
 
+<!-- ══════════════════════════════════════════════ -->
+<!-- SCREEN 2: CASE READY                          -->
+<!-- ══════════════════════════════════════════════ -->
+<main id="screen-ready" class="hidden ml-64 flex-1 min-h-screen bg-surface-bright overflow-y-auto">
+  <div class="max-w-6xl mx-auto p-10">
+    <header class="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
+      <div>
+        <div class="flex items-center space-x-2 text-on-surface-variant mb-2">
+          <span id="cr-ref" class="font-label-md text-label-md uppercase tracking-wider text-outline">Case</span>
+          <span class="material-symbols-outlined text-sm">chevron_right</span>
+          <span class="font-label-sm text-label-sm bg-surface-container-high text-on-surface px-2 py-1 rounded">Fact-gathering complete</span>
+        </div>
+        <h2 id="cr-title" class="font-headline-xl text-headline-xl text-on-surface">Case Analysis</h2>
+      </div>
+      <div class="flex items-center space-x-3">
+        <button onclick="showScreen('chat')" class="border border-outline-variant text-on-surface font-label-md text-label-md px-4 py-2.5 rounded-lg hover:bg-surface-container transition-all flex items-center space-x-2">
+          <span class="material-symbols-outlined text-[18px]">chat</span><span>Continue Chat</span>
+        </button>
+        <button onclick="handleGenerate()" class="bg-primary text-on-primary font-label-md text-label-md px-6 py-3 rounded-lg hover:bg-primary-container hover:shadow-md transition-all flex items-center space-x-2">
+          <span class="material-symbols-outlined text-[18px]">description</span><span>Generate Complaint</span>
+        </button>
+      </div>
+    </header>
+    <div class="grid grid-cols-12 gap-6">
+      <div class="col-span-8 flex flex-col gap-6">
+        <div class="rounded-xl overflow-hidden shadow-sm border border-outline-variant bg-surface-container-lowest">
+          <div class="h-36 w-full bg-gradient-to-r from-blue-600 to-blue-400 flex items-center justify-center relative">
+            <span class="material-symbols-outlined text-white opacity-20" style="font-size:80px">balance</span>
+            <div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest to-transparent"></div>
+          </div>
+          <div class="p-6 pt-0 relative z-10 -mt-8">
+            <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-6 shadow-sm">
+              <h3 class="font-headline-md text-on-surface mb-3">Case Summary</h3>
+              <p id="cr-summary" class="font-body-md text-body-md text-on-surface-variant leading-relaxed"></p>
+            </div>
+          </div>
+        </div>
+        <div class="bg-surface-container-lowest rounded-xl border border-outline-variant p-6">
+          <div class="flex items-center space-x-2 mb-5">
+            <span class="material-symbols-outlined text-primary">inventory_2</span>
+            <h4 class="font-label-md text-label-md text-on-surface uppercase tracking-wide">Collected Case Facts</h4>
+          </div>
+          <div id="cr-facts" class="grid grid-cols-2 gap-4"></div>
+        </div>
+      </div>
+      <div class="col-span-4">
+        <div class="bg-surface-container-lowest rounded-xl border border-outline-variant overflow-hidden shadow-sm">
+          <div class="h-24 w-full bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center border-b border-outline-variant">
+            <span class="material-symbols-outlined text-primary" style="font-size:40px">group_work</span>
+          </div>
+          <div class="p-6">
+            <h3 class="mb-5" style="font-size:18px;font-weight:600;color:#0d1c2e">Extracted Entities</h3>
+            <div class="space-y-4">
+              <div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/50">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Plaintiff</span>
+                  <span class="bg-secondary-fixed text-on-secondary-fixed text-[10px] px-2 py-0.5 rounded-full font-bold">Primary</span>
+                </div>
+                <p id="cr-plaintiff" class="font-body-md text-on-surface font-semibold flex items-center gap-2">
+                  <span class="material-symbols-outlined text-outline text-[18px]">person</span><span>—</span>
+                </p>
+              </div>
+              <div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/50">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Defendant</span>
+                  <span class="bg-error-container text-on-error-container text-[10px] px-2 py-0.5 rounded-full font-bold">Adverse</span>
+                </div>
+                <p id="cr-defendant" class="font-body-md text-on-surface font-semibold flex items-center gap-2">
+                  <span class="material-symbols-outlined text-outline text-[18px]">domain</span><span>—</span>
+                </p>
+              </div>
+              <div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant/50">
+                <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider block mb-1">Case Type</span>
+                <p id="cr-casetype" class="font-body-md text-on-surface flex items-center gap-2">
+                  <span class="material-symbols-outlined text-outline text-[18px]">gavel</span><span>—</span>
+                </p>
+              </div>
+              <div id="cr-warn" class="hidden p-4 bg-error-container rounded-lg border border-error/20">
+                <div class="flex items-center space-x-2 mb-1">
+                  <span class="material-symbols-outlined text-on-error-container text-[16px]">warning</span>
+                  <span class="font-label-sm text-label-sm text-on-error-container font-semibold uppercase">Missing Fields</span>
+                </div>
+                <p id="cr-warn-text" class="text-xs text-on-error-container"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- SCREEN 4: DRAFT PREVIEW                       -->
+<!-- ══════════════════════════════════════════════ -->
+<main id="screen-draft" class="hidden ml-64 flex-1 flex flex-col h-screen overflow-hidden">
+  <header class="h-20 px-8 flex items-center justify-between border-b border-slate-200 bg-white shrink-0">
+    <div>
+      <h1 id="draft-title" class="font-headline-md text-on-surface">Legal Complaint</h1>
+      <div class="flex items-center space-x-2 mt-1">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-700/10">
+          <span class="w-1.5 h-1.5 rounded-full bg-blue-600 mr-1.5"></span>Drafted
+        </span>
+        <span id="draft-meta" class="text-slate-500 font-label-sm text-label-sm"></span>
+      </div>
+    </div>
+    <button onclick="showScreen('chat')" class="border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg py-2 px-4 flex items-center space-x-2 font-label-md text-label-md">
+      <span class="material-symbols-outlined text-sm">chat</span><span>View Chat</span>
+    </button>
+  </header>
+  <div class="flex-1 flex overflow-hidden">
+    <div class="w-96 flex-shrink-0 border-r border-slate-200 bg-surface flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-slate-200 bg-white flex items-center space-x-2">
+        <span class="material-symbols-outlined text-blue-600 text-sm">history</span>
+        <h2 class="font-label-md text-label-md text-slate-900">Consultation History</h2>
+      </div>
+      <div id="draft-history" class="p-5 space-y-4 overflow-y-auto flex-1"></div>
+    </div>
+    <div class="flex-1 bg-slate-100 overflow-y-auto p-8 relative flex flex-col items-center">
+      <div class="absolute top-8 right-8 flex space-x-3 z-20">
+        <button onclick="dlDoc('docx')" class="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg py-2 px-4 flex items-center space-x-2 shadow-sm font-label-md text-label-md">
+          <span class="material-symbols-outlined text-sm">description</span><span>DOCX</span>
+        </button>
+        <button onclick="dlDoc('pdf')" class="bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg py-2 px-4 flex items-center space-x-2 shadow-sm font-label-md text-label-md">
+          <span class="material-symbols-outlined text-sm">picture_as_pdf</span><span>PDF</span>
+        </button>
+        <button onclick="copyDraft()" id="btn-copy" class="bg-blue-600 text-white hover:bg-blue-700 rounded-lg py-2 px-5 flex items-center space-x-2 shadow shadow-blue-600/20 font-label-md text-label-md ml-4">
+          <span class="material-symbols-outlined text-sm">content_copy</span><span>Copy</span>
+        </button>
+      </div>
+      <div id="unknowns-banner" class="hidden w-full max-w-[800px] mt-12 mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center space-x-2 text-yellow-800 text-sm font-medium">
+        <span class="material-symbols-outlined text-[16px]">warning</span>
+        <span id="unknowns-text"></span>
+      </div>
+      <div id="draft-paper" class="bg-white w-full max-w-[800px] shadow-sm border border-slate-200 rounded-sm p-16 mt-12 mb-12 text-slate-800 leading-relaxed whitespace-pre-wrap" style="font-family:'Courier Prime',monospace;font-size:14px;min-height:1000px"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- OVERLAYS                                       -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="overlay-draft" class="hidden fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+  <div class="bg-white rounded-2xl p-10 shadow-2xl flex flex-col items-center space-y-4 max-w-sm w-full mx-4">
+    <div class="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center">
+      <span class="material-symbols-outlined text-primary text-3xl animate-pulse">description</span>
+    </div>
+    <h3 class="font-headline-md text-on-surface text-center">Generating Complaint</h3>
+    <p class="text-sm text-on-surface-variant text-center">Claude is drafting your formal legal complaint. This takes 15–30 seconds.</p>
+    <div class="w-full h-1.5 bg-surface-variant rounded-full overflow-hidden">
+      <div class="h-full bg-primary rounded-full animate-pulse" style="width:70%"></div>
+    </div>
+  </div>
 </div>
 
-<div id="toast"></div>
+<div id="modal-force" class="hidden fixed inset-0 bg-black/30 z-50 flex items-center justify-center">
+  <div class="bg-white rounded-2xl p-8 shadow-2xl max-w-md w-full mx-4">
+    <div class="flex items-center space-x-3 mb-4">
+      <div class="w-10 h-10 bg-error-container rounded-full flex items-center justify-center">
+        <span class="material-symbols-outlined text-on-error-container">warning</span>
+      </div>
+      <h3 class="font-headline-md text-on-surface">Missing Required Fields</h3>
+    </div>
+    <p class="text-sm text-on-surface-variant mb-4">These fields are missing. The complaint will use <code class="bg-surface-container px-1 rounded text-xs">[UNKNOWN]</code> placeholders.</p>
+    <ul id="modal-fields" class="space-y-2 mb-6 max-h-40 overflow-y-auto"></ul>
+    <div class="flex space-x-3">
+      <button onclick="closeModal()" class="flex-1 py-2.5 border border-outline-variant text-on-surface rounded-lg font-label-md text-label-md hover:bg-surface-container transition-colors">Cancel</button>
+      <button onclick="confirmForce()" class="flex-1 py-2.5 bg-primary text-on-primary rounded-lg font-label-md text-label-md hover:bg-primary-container transition-colors">Generate Anyway</button>
+    </div>
+  </div>
+</div>
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────────
+// ═══════════════ STATE ═══════════════
 const S = {
-  sessionId: localStorage.getItem('ny_sid') || null,
-  caseId:    localStorage.getItem('ny_cid') || null,
-  flow:      'CHAT_ONLY',   // CHAT_ONLY | INTAKE_ACTIVE | READY_TO_DRAFT | DRAFTING | DRAFT_COMPLETE
-  caseType:  null,
-  fields:    {},
-  required:  [],
-  missing:   [],
-  draft:     null,
-  busy:      false,
+  sessionId:null, caseId:null, caseType:null,
+  messages:[], sessions:[],
+  provided:{}, missing:[],
+  intakeStarted:false, intakeComplete:false,
+  draft:null, wordCount:0, unknownCount:0,
 };
 
-// ── Bootstrap ──────────────────────────────────────────────────────────────
-loadSessions();
-if (S.sessionId) restoreSession();
+// ═══════════════ ROUTING ═══════════════
+function showScreen(name) {
+  ['welcome','chat','ready','draft'].forEach(s =>
+    document.getElementById('screen-'+s).classList.toggle('hidden', s !== name)
+  );
+}
+function showWelcome() { resetState(); showScreen('welcome'); }
 
-// ── Layout toggles ─────────────────────────────────────────────────────────
-let drawerOpen = true;
-let panelOpen  = true;
-function toggleDrawer(){
-  drawerOpen = !drawerOpen;
-  document.getElementById('drawer').classList.toggle('hidden', !drawerOpen);
+// ═══════════════ WELCOME ═══════════════
+function prefill(text) {
+  const el = document.getElementById('welcome-input');
+  el.value = text; el.focus();
 }
-function togglePanel(){
-  panelOpen = !panelOpen;
-  document.getElementById('panel').classList.toggle('hidden', !panelOpen);
-}
-function setSbActive(el){
-  document.querySelectorAll('.sb-btn').forEach(b=>b.classList.remove('active'));
-  el.classList.add('active');
-}
-
-// ── Input handling ─────────────────────────────────────────────────────────
-function handleKey(e){
-  if(e.key==='Enter' && !e.shiftKey){e.preventDefault();send()}
-}
-function autoGrow(el){
-  el.style.height='auto';
-  el.style.height=Math.min(el.scrollHeight,160)+'px';
-}
-function usePill(el){
-  const inp=document.getElementById('msg-input');
-  inp.value=el.textContent;
-  autoGrow(inp);
-  send();
+async function submitWelcome() {
+  const el = document.getElementById('welcome-input');
+  const text = el.value.trim();
+  if (!text) return;
+  el.value = ''; el.style.height = 'auto';
+  showScreen('chat');
+  appendMsg('user', text);
+  setTyping(true);
+  await apiQuestion(text);
 }
 
-// ── Affirmative intent detection ────────────────────────────────────────────
-function isAffirmative(text){
-  const t=text.toLowerCase().trim();
-  if(t.split(/\s+/).length>7)return false; // long reply = answering a field, not confirming
-  return /^(yes|yeah|yep|yup|sure|ok|okay|go ahead|generate|draft|do it|please|proceed|create it|let's go|absolutely|definitely|of course|yes please|yes generate|generate it|draft it|generate complaint|draft complaint|make it|sounds good|go for it)[\s!.]*$/.test(t);
+// ═══════════════ CHAT ═══════════════
+async function submitChat() {
+  const el = document.getElementById('chat-input');
+  const text = el.value.trim();
+  if (!text) return;
+  el.value = ''; el.style.height = 'auto';
+  appendMsg('user', text);
+  setTyping(true);
+  const tasks = [apiQuestion(text)];
+  if (S.intakeStarted && S.caseId) tasks.push(apiProvide(text));
+  await Promise.allSettled(tasks);
 }
 
-// ── Send message ───────────────────────────────────────────────────────────
-async function send(){
-  const inp=document.getElementById('msg-input');
-  const text=inp.value.trim();
-  if(!text||S.busy)return;
-  inp.value='';inp.style.height='auto';
-  hideWelcome();
-  addMsg('user',text);
-  S.busy=true;
-  setBtnState(false);
-  showTyping(true);
-
-  try{
-    if(S.flow==='READY_TO_DRAFT' && isAffirmative(text)){
-      showTyping(false);
-      S.busy=false;
-      setBtnState(true);
-      await generate();
-      return;
-    } else if(S.flow==='CHAT_ONLY'||S.flow==='INTAKE_ACTIVE'&&!S.caseId){
-      await askQuestion(text);
-    } else if(S.flow==='INTAKE_ACTIVE'||S.flow==='READY_TO_DRAFT'){
-      await provide(text);
-    } else {
-      await askQuestion(text);
+// ═══════════════ API: /questions ═══════════════
+async function apiQuestion(text) {
+  try {
+    const r = await fetch('/questions', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ question:text, session_id:S.sessionId })
+    });
+    if (!r.ok) { const e=await r.json().catch(()=>({})); throw new Error(e.detail||'Error '+r.status); }
+    const d = await r.json();
+    setTyping(false);
+    S.sessionId = d.session_id;
+    S.caseType = d.case_type || S.caseType;
+    appendMsg('assistant', d.answer);
+    updateChatHeader();
+    loadSessions();
+    hideErr();
+    if (d.offer_complaint && d.case_type && d.case_type !== 'other' && d.case_type !== 'unsupported') {
+      // Immediately surface the Generate button using the case_id from /questions
+      if (d.case_id) S.caseId = d.case_id;
+      document.getElementById('btn-generate').classList.remove('hidden');
+      // Also kick off intake (populates the fields panel) — but don't block the button on it
+      if (!S.intakeStarted) apiIntakeStart(text, d.case_type);
     }
-  } catch(err){
-    addMsg('ai','Sorry, I encountered an error: '+err.message+'. Please try again.');
-  }
-
-  S.busy=false;
-  showTyping(false);
-  setBtnState(true);
-}
-
-// ── Ask question (/questions) ──────────────────────────────────────────────
-async function askQuestion(text){
-  const body={question:text};
-  if(S.sessionId) body.session_id=S.sessionId;
-
-  const r=await fetch('/questions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok) throw new Error(`Server ${r.status}`);
-  const d=await r.json();
-
-  S.sessionId=d.session_id;
-  localStorage.setItem('ny_sid',d.session_id);
-  addMsg('ai',d.answer);
-  updateSessionList();
-
-  if(d.offer_complaint){
-    S.caseType=d.case_type;
-    S.required=d.required_elements||[];
-    showPanel(true);
-    await startIntake(text);
+  } catch(e) {
+    setTyping(false);
+    showErr(e.message || 'Failed to get a response. Please try again.');
   }
 }
 
-// ── Start intake ────────────────────────────────────────────────────────────
-async function startIntake(initialText){
-  const r=await fetch('/intake/start',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({session_id:S.sessionId,case_type:S.caseType,initial_text:initialText})
+// ═══════════════ API: /intake/start ═══════════════
+async function apiIntakeStart(initialText, caseType) {
+  if (!S.sessionId) return;
+  try {
+    // Pass the full conversation so entity extraction sees all facts the user
+    // provided in the chat phase, not just the triggering message.
+    const allUserText = S.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n\n');
+    const r = await fetch('/intake/start', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ session_id:S.sessionId, case_type:caseType, initial_text:allUserText || initialText })
+    });
+    if (!r.ok) return;
+    const d = await r.json();
+    S.caseId = d.case_id;
+    S.intakeStarted = true;
+    S.provided = d.provided_fields || d.pre_filled || {};
+    S.missing = (d.missing_required||[]).map(f=>({ id:f.id||f, label:f.label||fmtF(f.id||f) }));
+    updatePanel(d);
+    if (d.is_complete) onComplete(d);
+  } catch(e) { console.error('intake/start',e); }
+}
+
+// ═══════════════ API: /intake/{id}/provide ═══════════════
+async function apiProvide(text) {
+  try {
+    const r = await fetch(`/intake/${S.caseId}/provide`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text })
+    });
+    if (!r.ok) return;
+    const d = await r.json();
+    S.provided = d.provided_fields || { ...S.provided, ...(d.pre_filled||{}) };
+    S.missing = (d.missing_required||[]).map(f=>({ id:f.id||f, label:f.label||fmtF(f.id||f) }));
+    updatePanel(d);
+    if (d.is_complete) onComplete(d);
+  } catch(e) { console.error('intake/provide',e); }
+}
+
+function onComplete(d) {
+  S.intakeComplete = true;
+  S.missing = [];
+  document.getElementById('btn-generate').classList.remove('hidden');
+  document.getElementById('btn-force').classList.add('hidden');
+  document.getElementById('panel-hint').textContent = 'All required fields collected!';
+  populateReadyScreen(d);
+  showScreen('ready');
+}
+
+// ═══════════════ GENERATE ═══════════════
+async function handleGenerate() {
+  if (!S.caseId) {
+    // Intake start may still be in flight — try starting it now so we get a case_id
+    if (S.caseType && !S.intakeStarted) {
+      const allUserText = S.messages.filter(m=>m.role==='user').map(m=>m.content).join('\n\n');
+      await apiIntakeStart(allUserText, S.caseType);
+    }
+    if (!S.caseId) { showErr('Case session not ready yet — please wait a moment and try again.'); return; }
+  }
+  if (S.missing.length > 0) { showForceModal(); return; }
+  await runDraft();
+}
+
+async function runDraft() {
+  document.getElementById('overlay-draft').classList.remove('hidden');
+  showScreen('chat');
+  try {
+    const r = await fetch(`/draft/${S.caseId}`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+    });
+    if (r.status === 422) {
+      document.getElementById('overlay-draft').classList.add('hidden');
+      const e = await r.json();
+      S.missing = (e.detail?.fields||[]).map(f=>({ id:f.field_id, label:fmtF(f.field_id) }));
+      showForceModal();
+      return;
+    }
+    if (!r.ok) throw new Error('Draft failed ('+r.status+')');
+    const d = await r.json();
+    S.draft = d.complaint; S.wordCount = d.word_count; S.unknownCount = d.unknown_count;
+    document.getElementById('overlay-draft').classList.add('hidden');
+    renderDraft();
+    showScreen('draft');
+  } catch(e) {
+    document.getElementById('overlay-draft').classList.add('hidden');
+    showErr(e.message||'Draft generation failed.');
+  }
+}
+
+function forceDraft() { showForceModal(); }
+
+async function confirmForce() {
+  closeModal();
+  try { await fetch(`/intake/${S.caseId}/force`, { method:'PATCH' }); } catch(e) {}
+  S.missing = [];
+  await runDraft();
+}
+
+// ═══════════════ DOWNLOADS ═══════════════
+async function dlDoc(type) {
+  if (!S.caseId) return;
+  try {
+    const url = type==='pdf' ? `/document/${S.caseId}/pdf` : `/document/${S.caseId}`;
+    const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+    if (!r.ok) { alert('Download failed — generate the complaint first.'); return; }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `complaint_${S.caseId.slice(0,8)}.${type}`;
+    a.click(); URL.revokeObjectURL(a.href);
+  } catch(e) { alert('Download failed: '+e.message); }
+}
+
+function copyDraft() {
+  if (!S.draft) return;
+  navigator.clipboard.writeText(S.draft).then(() => {
+    const b = document.getElementById('btn-copy');
+    b.innerHTML = '<span class="material-symbols-outlined text-sm">check</span><span>Copied!</span>';
+    setTimeout(()=>{ b.innerHTML='<span class="material-symbols-outlined text-sm">content_copy</span><span>Copy</span>'; },2000);
   });
-  if(!r.ok) return;
-  const d=await r.json();
-  S.caseId=d.case_id;
-  localStorage.setItem('ny_cid',d.case_id);
-  S.flow='INTAKE_ACTIVE';
-  S.fields=d.pre_filled||{};
-  S.missing=d.missing_required||[];
-  S.required=S.required.length?S.required:(d.missing_required||[]);
-  renderCasePanel(d);
-  setStatus('intake','Collecting fields…');
-
-  if(!(d.missing_required&&d.missing_required.length)){
-    S.flow='READY_TO_DRAFT';
-    setStatus('ready','Ready to draft');
-    enableGen(true);
-    addMsg('ai','I have everything I need to draft your complaint. Would you like me to generate it now?');
-  } else if(d.missing_questions && d.missing_questions.length){
-    const q=d.missing_questions.slice(0,2).join(' ');
-    addMsg('ai',q,'system');
-  }
 }
 
-// ── Provide intake ──────────────────────────────────────────────────────────
-async function provide(text){
-  if(!S.caseId){await askQuestion(text);return;}
-  const r=await fetch(`/intake/${S.caseId}/provide`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
-  if(!r.ok) throw new Error(`Server ${r.status}`);
-  const d=await r.json();
-  S.fields=d.pre_filled||S.fields;
-  S.missing=d.missing_required||[];
-  renderCasePanel(d);
-
-  if(d.is_complete){
-    S.flow='READY_TO_DRAFT';
-    setStatus('ready','Ready to draft');
-    enableGen(true);
-    addMsg('ai','I now have all the key details needed for your complaint. Would you like me to generate it?');
-  } else if(d.missing_questions&&d.missing_questions.length){
-    const r2=await fetch('/questions',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({question:text,session_id:S.sessionId})});
-    if(r2.ok){const d2=await r2.json();addMsg('ai',d2.answer);}
-    showForceBtn(d.missing_required&&d.missing_required.length>0);
-  }
+// ═══════════════ SESSIONS ═══════════════
+async function loadSessions() {
+  try {
+    const r = await fetch('/sessions');
+    if (!r.ok) return;
+    S.sessions = await r.json();
+    renderSessions();
+  } catch(e) {}
 }
 
-// ── Render case panel ───────────────────────────────────────────────────────
-function renderCasePanel(d){
-  document.getElementById('panel-empty').style.display='none';
-  document.getElementById('panel-body').style.display='block';
+async function openSession(id, title) {
+  try {
+    const r = await fetch(`/history/${id}`);
+    if (!r.ok) return;
+    const msgs = await r.json();
+    resetState();
+    S.sessionId = id;
+    S.messages = msgs.map(m=>({ role:m.role, content:m.content, ts:m.timestamp }));
+    showScreen('chat');
+    const c = document.getElementById('chat-messages'); c.innerHTML = '';
+    S.messages.forEach(m => renderMsg(m));
+    document.getElementById('chat-title').textContent = (title||'Consultation').slice(0,55);
+    scrollChat();
+  } catch(e) {}
+}
 
-  // Case type
-  const ctype=d.case_type||S.caseType||'—';
-  const ctLabel=ctype.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-  document.querySelector('#p-case-type .ct-badge').textContent=ctype;
-  document.querySelector('#p-case-type .ct-label').textContent=ctLabel;
+async function delSession(id, ev) {
+  ev.stopPropagation();
+  if (!confirm('Delete this session?')) return;
+  try {
+    await fetch(`/sessions/${id}`, { method:'DELETE' });
+    if (S.sessionId===id) showWelcome(); else loadSessions();
+  } catch(e) {}
+}
 
-  // Progress
-  const total=(d.missing_required||[]).length+(Object.keys(d.pre_filled||{}).filter(k=>!k.startsWith('__')).length);
-  const filled=Object.keys(d.pre_filled||{}).filter(k=>!k.startsWith('__')).length;
-  const pct=total>0?Math.round(filled/total*100):0;
-  document.getElementById('p-pct').textContent=pct+'%';
-  document.getElementById('p-bar').style.width=pct+'%';
+// ═══════════════ RENDER ═══════════════
+function appendMsg(role, content) {
+  const msg = { role, content, ts:new Date().toISOString() };
+  S.messages.push(msg); renderMsg(msg); scrollChat();
+}
 
-  // Fields
-  const fl=document.getElementById('p-fields');
-  fl.innerHTML='';
-  const allFields=[
-    ...(d.missing_required||[]).map(f=>({...f,has:false})),
-    ...Object.entries(d.pre_filled||{}).filter(([k])=>!k.startsWith('__')).map(([k,v])=>({id:k,label:k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),has:true,val:v}))
-  ];
-  // deduplicate by id
-  const seen=new Set();
-  const deduped=allFields.filter(f=>{if(seen.has(f.id))return false;seen.add(f.id);return true;});
-  deduped.forEach(f=>{
-    const row=document.createElement('div');
-    row.className='field-row '+(f.has?'filled':'missing');
-    row.innerHTML=`<div class="f-dot"></div><div class="f-content"><div class="f-label">${f.label||f.id}</div><div class="f-value ${f.has?'':'empty'}">${f.has?(f.val||'—'):'Missing'}</div></div>`;
-    fl.appendChild(row);
-  });
-
-  if(d.is_complete){
-    enableGen(true);
-    S.flow='READY_TO_DRAFT';
-    setStatus('ready','Ready to draft');
-    showForceBtn(false);
+function renderMsg(msg) {
+  const c = document.getElementById('chat-messages');
+  const t = fmtTime(msg.ts);
+  const el = document.createElement('div');
+  if (msg.role === 'assistant') {
+    el.className = 'flex items-start space-x-4 max-w-3xl';
+    el.innerHTML = `
+      <div class="w-8 h-8 rounded bg-primary-container flex items-center justify-center shrink-0 mt-1">
+        <span class="material-symbols-outlined text-on-primary-container text-sm">smart_toy</span>
+      </div>
+      <div class="flex-1 space-y-1">
+        <div class="flex items-center justify-between">
+          <span class="font-label-md text-label-md text-on-surface">Nyaay AI</span>
+          <span class="font-label-sm text-label-sm text-outline">${t}</span>
+        </div>
+        <div class="md-prose bg-surface-container-low border border-outline-variant rounded-xl rounded-tl-sm p-4 text-on-surface font-body-md text-body-md">${marked.parse(msg.content)}</div>
+      </div>`;
   } else {
-    showForceBtn((d.missing_required||[]).length>0);
+    el.className = 'flex items-start space-x-4 max-w-3xl ml-auto flex-row-reverse space-x-reverse';
+    el.innerHTML = `
+      <div class="w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center shrink-0 mt-1">
+        <span class="material-symbols-outlined text-on-secondary text-sm" style="font-variation-settings:'FILL' 1">person</span>
+      </div>
+      <div class="flex-1 space-y-1">
+        <div class="flex items-center justify-between flex-row-reverse">
+          <span class="font-label-md text-label-md text-on-surface">You</span>
+          <span class="font-label-sm text-label-sm text-outline">${t}</span>
+        </div>
+        <div class="bg-primary text-on-primary rounded-xl rounded-tr-sm p-4 font-body-md text-body-md whitespace-pre-wrap">${esc(msg.content)}</div>
+      </div>`;
   }
+  c.appendChild(el);
 }
 
-// ── Generate complaint ──────────────────────────────────────────────────────
-async function generate(){
-  if(!S.caseId||S.flow==='DRAFTING'||S.flow==='DRAFT_COMPLETE')return;
-  S.flow='DRAFTING';
-  setStatus('drafting','Drafting…');
-  enableGen(false);
-  showForceBtn(false);
-  showDraftOverlay(true);
-
-  try{
-    const r=await fetch(`/draft/${S.caseId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
-    if(!r.ok) throw new Error(`Server ${r.status}`);
-    const d=await r.json();
-    S.draft=d.complaint;
-    S.flow='DRAFT_COMPLETE';
-    showDraftOverlay(false);
-    setStatus('ready','Draft complete');
-    addMsg('ai',`Your complaint has been drafted. ${d.word_count} words${d.unknown_count?`, ${d.unknown_count} field(s) need review`:''}. Download using the panel buttons.`);
-    showComplaint(d.complaint);
-  } catch(err){
-    S.flow='READY_TO_DRAFT';
-    showDraftOverlay(false);
-    setStatus('ready','Ready to draft');
-    enableGen(true);
-    addMsg('ai','Draft generation failed: '+err.message);
-  }
-}
-
-async function forceGen(){
-  if(!S.caseId)return;
-  const r=await fetch(`/intake/${S.caseId}/force`,{method:'PATCH',headers:{'Content-Type':'application/json'}});
-  if(!r.ok)return;
-  S.flow='READY_TO_DRAFT';
-  enableGen(true);
-  showForceBtn(false);
-  addMsg('ai','Proceeding with incomplete fields. Missing values will appear as [UNKNOWN] in the complaint — you can fill them in later.');
-  setStatus('ready','Ready to draft');
-}
-
-function showComplaint(text){
-  const card=document.getElementById('complaint-card');
-  card.style.display='block';
-  document.getElementById('complaint-text').textContent=text;
-}
-
-// ── Downloads ───────────────────────────────────────────────────────────────
-async function dlPDF(){
-  if(!S.caseId)return;
-  try{
-    const r=await fetch(`/document/${S.caseId}/pdf`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
-    if(!r.ok) throw new Error(`${r.status}`);
-    const blob=await r.blob();
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=`complaint_${S.caseId.slice(0,8)}.pdf`;
-    a.click();
-    toast('PDF downloaded');
-  } catch(e){toast('PDF download failed: '+e.message)}
-}
-
-async function dlDOCX(){
-  if(!S.caseId)return;
-  try{
-    const r=await fetch(`/document/${S.caseId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
-    if(!r.ok) throw new Error(`${r.status}`);
-    const blob=await r.blob();
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=`complaint_${S.caseId.slice(0,8)}.docx`;
-    a.click();
-    toast('DOCX downloaded');
-  } catch(e){toast('DOCX download failed: '+e.message)}
-}
-
-function copyCmp(){
-  if(!S.draft)return;
-  navigator.clipboard.writeText(S.draft).then(()=>toast('Copied to clipboard'));
-}
-
-// ── Sessions ────────────────────────────────────────────────────────────────
-async function loadSessions(){
-  try{
-    const r=await fetch('/sessions');
-    if(!r.ok)return;
-    const sessions=await r.json();
-    renderSessionList(sessions);
-  } catch(e){}
-}
-
-function renderSessionList(sessions){
-  const el=document.getElementById('session-list');
-  if(!sessions||!sessions.length){
-    el.innerHTML='<div class="sess-empty">No prior sessions.<br>Start a new matter above.</div>';
-    return;
-  }
-  el.innerHTML='';
-  sessions.slice().reverse().forEach(s=>{
-    const item=document.createElement('div');
-    item.className='sess-item'+(s.id===S.sessionId?' active':'');
-    const d=new Date(s.created_at||Date.now()).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-    item.innerHTML=`<div class="si-title">${s.title||'Untitled Matter'}</div><div class="si-meta">${d}</div>`;
-    item.onclick=()=>switchSess(s.id);
-    el.appendChild(item);
+function renderSessions() {
+  const el = document.getElementById('session-list'); el.innerHTML = '';
+  S.sessions.slice(0,8).forEach(s => {
+    const d = document.createElement('div');
+    d.className = `group flex items-center justify-between p-2 rounded-lg cursor-pointer hover:bg-white transition-colors ${S.sessionId===s.id?'bg-white ring-1 ring-slate-200':''}`;
+    d.onclick = () => openSession(s.id, s.title);
+    d.innerHTML = `<span class="text-xs text-slate-600 truncate flex-1 pr-2 font-medium">${esc(s.title||'Untitled')}</span>
+      <button class="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-red-500 transition-opacity" onclick="delSession('${s.id}',event)">
+        <span class="material-symbols-outlined text-[13px]">delete</span></button>`;
+    el.appendChild(d);
   });
 }
 
-function updateSessionList(){loadSessions();}
+function updatePanel(d) {
+  const provided = d.provided_fields || d.pre_filled || S.provided || {};
+  const missing  = d.missing_required || S.missing || [];
+  const total = Object.keys(provided).length + missing.length;
+  const pct = total > 0 ? Math.round(Object.keys(provided).length / total * 100) : 0;
+  document.getElementById('pct').textContent = pct+'%';
+  document.getElementById('pbar').style.width = pct+'%';
 
-async function switchSess(id){
-  if(id===S.sessionId)return;
-  S.sessionId=id;
-  localStorage.setItem('ny_sid',id);
-  S.caseId=null;
-  localStorage.removeItem('ny_cid');
-  S.flow='CHAT_ONLY';
-  S.draft=null;
-  S.fields={};
-  resetPanel();
-  setStatus('new','New matter');
-  enableGen(false);
-  showForceBtn(false);
-  document.getElementById('complaint-card').style.display='none';
+  const ul = document.getElementById('checklist'); ul.innerHTML = '';
+  Object.entries(provided).forEach(([id,val]) => {
+    const li = document.createElement('li'); li.className = 'flex items-start space-x-3';
+    li.innerHTML = `<span class="material-symbols-outlined text-green-600 text-[20px] shrink-0 mt-0.5" style="font-variation-settings:'FILL' 1">check_circle</span>
+      <div><p class="font-label-md text-label-md text-on-surface">${fmtF(id)}</p>
+      <p class="font-label-sm text-label-sm text-on-surface-variant mt-0.5">${esc(String(val).slice(0,60))}</p></div>`;
+    ul.appendChild(li);
+  });
+  missing.forEach(f => {
+    const id=f.id||f; const label=f.label||fmtF(id);
+    const li = document.createElement('li'); li.className = 'flex items-start space-x-3';
+    li.innerHTML = `<span class="material-symbols-outlined text-outline text-[20px] shrink-0 mt-0.5">radio_button_unchecked</span>
+      <div><p class="font-label-md text-label-md text-on-surface">${label}</p>
+      <p class="font-label-sm text-label-sm text-outline mt-0.5 italic">Awaiting details...</p></div>`;
+    ul.appendChild(li);
+  });
+  if (!ul.children.length) ul.innerHTML = '<li class="text-xs text-outline italic">No fields yet.</li>';
 
-  const msgs=document.getElementById('messages');
-  msgs.innerHTML='';
-  document.getElementById('welcome').style.display='none';
-
-  try{
-    const r=await fetch(`/history/${id}`);
-    if(!r.ok)return;
-    const hist=await r.json();
-    hist.forEach(m=>addMsg(m.role==='user'?'user':'ai',m.content));
-  }catch(e){}
-  loadSessions();
+  const hasMissing = missing.length > 0;
+  document.getElementById('btn-force').classList.toggle('hidden', !hasMissing || !S.intakeStarted);
+  document.getElementById('panel-hint').textContent = hasMissing
+    ? `${missing.length} field(s) still needed`
+    : S.intakeStarted ? 'All required fields collected!' : 'Collecting case information...';
+  if (!hasMissing && S.intakeStarted) document.getElementById('btn-generate').classList.remove('hidden');
 }
 
-async function restoreSession(){
-  // Silently try to restore – if session is gone it's OK
-  try{
-    const r=await fetch(`/history/${S.sessionId}`);
-    if(!r.ok){S.sessionId=null;localStorage.removeItem('ny_sid');return;}
-    const hist=await r.json();
-    if(!hist.length)return;
-    hideWelcome();
-    hist.forEach(m=>addMsg(m.role==='user'?'user':'ai',m.content));
-  }catch(e){}
-}
-
-function newChat(){
-  S.sessionId=null;S.caseId=null;
-  localStorage.removeItem('ny_sid');localStorage.removeItem('ny_cid');
-  S.flow='CHAT_ONLY';S.draft=null;S.fields={};
-  const msgs=document.getElementById('messages');
-  msgs.innerHTML='';
-  msgs.appendChild(buildWelcome());
-  resetPanel();
-  setStatus('new','New matter');
-  enableGen(false);
-  showForceBtn(false);
-  document.getElementById('complaint-card').style.display='none';
-  loadSessions();
-}
-
-// ── UI helpers ──────────────────────────────────────────────────────────────
-function hideWelcome(){
-  const w=document.getElementById('welcome');
-  if(w)w.remove();
-}
-
-function buildWelcome(){
-  const w=document.createElement('div');
-  w.id='welcome';
-  w.innerHTML=`
-    <div class="w-icon">N</div>
-    <h1>Good day, Counsellor.<br><em>How can I assist?</em></h1>
-    <p>Describe your client's situation in plain language. I'll analyze the legal position and help prepare the complaint.</p>
-    <div class="starter-pills">
-      <div class="pill" onclick="usePill(this)">My client slipped and fell at a grocery store</div>
-      <div class="pill" onclick="usePill(this)">Wrongful termination — hostile work environment</div>
-      <div class="pill" onclick="usePill(this)">Contractor breached the agreement, refused to pay</div>
-      <div class="pill" onclick="usePill(this)">Government seized property without fair compensation</div>
-    </div>`;
-  return w;
-}
-
-function addMsg(role, text, type){
-  const msgs=document.getElementById('messages');
-  const div=document.createElement('div');
-  if(type==='system'||role==='system'){
-    div.className='msg system';
-    div.innerHTML=`<div class="msg-body"><div class="msg-bubble"><svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${escHtml(text)}</div></div>`;
-  } else {
-    const isUser=role==='user';
-    div.className='msg '+(isUser?'user':'ai');
-    div.innerHTML=`<div class="msg-avatar">${isUser?'A':'N'}</div><div class="msg-body"><div class="msg-name">${isUser?'You':'Nyaay'}</div><div class="msg-bubble">${fmtText(text)}</div></div>`;
+function updateChatHeader() {
+  const first = S.messages.find(m => m.role==='user');
+  if (first) document.getElementById('chat-title').textContent =
+    first.content.slice(0,55) + (first.content.length>55?'…':'');
+  if (S.caseType && S.caseType!=='other' && S.caseType!=='unsupported') {
+    const b = document.getElementById('chat-badge');
+    b.textContent = fmtCT(S.caseType); b.classList.remove('hidden');
   }
-  msgs.appendChild(div);
-  scrollBottom();
 }
 
-function fmtText(t){
-  return escHtml(t)
-    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    .replace(/\n/g,'<br>');
+function populateReadyScreen(d) {
+  const provided = d.provided_fields || d.pre_filled || S.provided || {};
+  const missing  = d.missing_required || [];
+  const plaintiff = provided.plaintiff_name || provided.plaintiff || '—';
+  const defendant = provided.defendant_name || provided.defendant || '—';
+  const title = (plaintiff!=='—'&&defendant!=='—') ? `${plaintiff} v. ${defendant}` : 'Case Analysis';
+
+  document.getElementById('cr-title').textContent = title;
+  document.getElementById('cr-ref').textContent = `Case · ${fmtCT(S.caseType)}`;
+  document.getElementById('cr-plaintiff').innerHTML =
+    `<span class="material-symbols-outlined text-outline text-[18px]">person</span><span>${esc(plaintiff)}</span>`;
+  document.getElementById('cr-defendant').innerHTML =
+    `<span class="material-symbols-outlined text-outline text-[18px]">domain</span><span>${esc(defendant)}</span>`;
+  document.getElementById('cr-casetype').innerHTML =
+    `<span class="material-symbols-outlined text-outline text-[18px]">gavel</span><span>${fmtCT(S.caseType)}</span>`;
+
+  const last = [...S.messages].reverse().find(m=>m.role==='assistant');
+  document.getElementById('cr-summary').textContent = last
+    ? last.content.slice(0,350)+(last.content.length>350?'...':'')
+    : 'Comprehensive fact-gathering phase concluded.';
+
+  const grid = document.getElementById('cr-facts'); grid.innerHTML = '';
+  Object.entries(provided).forEach(([id,val]) => {
+    const div = document.createElement('div');
+    div.className = 'bg-surface-container-low rounded-lg p-4 border border-outline-variant/50';
+    div.innerHTML = `<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">${fmtF(id)}</p>
+      <p class="font-body-md text-on-surface font-medium">${esc(String(val))}</p>`;
+    grid.appendChild(div);
+  });
+
+  if (missing.length > 0) {
+    document.getElementById('cr-warn').classList.remove('hidden');
+    document.getElementById('cr-warn-text').textContent =
+      `${missing.length} field(s) will be [UNKNOWN]: ${missing.map(f=>f.label||fmtF(f.id||f)).join(', ')}`;
+  }
 }
 
-function escHtml(s){
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function renderDraft() {
+  const p = S.provided.plaintiff_name||S.provided.plaintiff||'';
+  const df = S.provided.defendant_name||S.provided.defendant||'';
+  document.getElementById('draft-title').textContent = (p&&df)?`${p} v. ${df}`:'Legal Complaint';
+  document.getElementById('draft-meta').textContent = `${S.wordCount} words · Generated just now`;
+  document.getElementById('draft-paper').textContent = S.draft||'';
+  if (S.unknownCount>0) {
+    document.getElementById('unknowns-banner').classList.remove('hidden');
+    document.getElementById('unknowns-text').textContent =
+      `${S.unknownCount} [UNKNOWN] placeholder(s) remain — review before filing.`;
+  }
+  const hist = document.getElementById('draft-history'); hist.innerHTML='';
+  S.messages.forEach(msg => {
+    const div = document.createElement('div'); div.className='flex space-x-3';
+    const ai = msg.role==='assistant';
+    div.innerHTML = `<div class="flex-shrink-0 mt-1">
+        <div class="w-7 h-7 rounded-full ${ai?'bg-blue-100':'bg-slate-100'} flex items-center justify-center">
+          <span class="material-symbols-outlined ${ai?'text-blue-600':'text-slate-600'} text-[14px]">${ai?'smart_toy':'person'}</span>
+        </div></div>
+      <div class="flex-1 ${ai?'bg-white':'bg-blue-50'} p-3 rounded-lg border ${ai?'border-slate-200':'border-blue-100'} shadow-sm">
+        <p class="text-sm text-slate-700 leading-relaxed">${esc(msg.content.slice(0,200))}${msg.content.length>200?'…':''}</p>
+        <div class="mt-1.5 text-xs text-slate-400">${fmtTime(msg.ts)}</div>
+      </div>`;
+    hist.appendChild(div);
+  });
 }
 
-function scrollBottom(){
-  const cs=document.getElementById('chat-scroll');
-  cs.scrollTop=cs.scrollHeight;
+// ═══════════════ MODALS ═══════════════
+function showForceModal() {
+  const ul = document.getElementById('modal-fields'); ul.innerHTML='';
+  S.missing.forEach(f => {
+    const li = document.createElement('li'); li.className='flex items-center space-x-2 text-sm text-on-surface-variant';
+    li.innerHTML = `<span class="material-symbols-outlined text-error text-[15px]">radio_button_unchecked</span>
+      <span>${f.label||fmtF(f.id||f)}</span>`;
+    ul.appendChild(li);
+  });
+  document.getElementById('modal-force').classList.remove('hidden');
+}
+function closeModal() { document.getElementById('modal-force').classList.add('hidden'); }
+
+// ═══════════════ UTILS ═══════════════
+function setTyping(on) {
+  document.getElementById('typing').classList.toggle('hidden',!on);
+  if (on) scrollChat();
+}
+function scrollChat() { const e=document.getElementById('chat-messages'); if(e) e.scrollTop=e.scrollHeight; }
+function showErr(msg) {
+  document.getElementById('err-text').textContent=msg;
+  document.getElementById('err-banner').classList.remove('hidden');
+  setTimeout(()=>document.getElementById('err-banner').classList.add('hidden'),8000);
+}
+function hideErr() { document.getElementById('err-banner').classList.add('hidden'); }
+function fmtF(id) { return (id||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); }
+function fmtCT(ct) { return (ct||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); }
+function fmtTime(ts) {
+  if (!ts) return '';
+  try { return new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); } catch(e){ return ''; }
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function resetState() {
+  Object.assign(S,{ sessionId:null,caseId:null,caseType:null,messages:[],provided:{},missing:[],
+    intakeStarted:false,intakeComplete:false,draft:null,wordCount:0,unknownCount:0 });
+  document.getElementById('chat-messages').innerHTML='';
+  document.getElementById('chat-title').textContent='New Consultation';
+  document.getElementById('chat-badge').classList.add('hidden');
+  document.getElementById('btn-generate').classList.add('hidden');
+  document.getElementById('pct').textContent='0%';
+  document.getElementById('pbar').style.width='0%';
+  document.getElementById('checklist').innerHTML=
+    '<li class="flex items-center space-x-3"><span class="material-symbols-outlined text-outline text-[18px]">radio_button_unchecked</span><span class="font-label-sm text-label-sm text-outline italic">Awaiting case description...</span></li>';
+  document.getElementById('btn-force').classList.add('hidden');
+  document.getElementById('panel-hint').textContent='Collecting case information...';
+  document.getElementById('unknowns-banner').classList.add('hidden');
+  document.getElementById('cr-warn').classList.add('hidden');
+  document.getElementById('cr-facts').innerHTML='';
 }
 
-function showTyping(v){
-  const t=document.getElementById('typing');
-  t.style.display=v?'block':'none';
-  if(v)scrollBottom();
-}
-
-function setBtnState(enabled){
-  const btn=document.getElementById('send-btn');
-  btn.disabled=!enabled;
-}
-
-function showPanel(v){
-  document.getElementById('panel').classList.toggle('hidden',!v);
-  panelOpen=v;
-}
-
-function resetPanel(){
-  document.getElementById('panel-empty').style.display='flex';
-  document.getElementById('panel-body').style.display='none';
-}
-
-function enableGen(v){
-  document.getElementById('gen-btn').disabled=!v;
-}
-
-function showForceBtn(v){
-  document.getElementById('force-btn').style.display=v?'block':'none';
-}
-
-function showDraftOverlay(v){
-  document.getElementById('draft-overlay').classList.toggle('show',v);
-}
-
-function setStatus(type, label){
-  const badge=document.getElementById('status-badge');
-  const txt=document.getElementById('status-text');
-  badge.className='';
-  if(type==='ready')badge.classList.add('ready');
-  else if(type==='drafting')badge.classList.add('drafting');
-  txt.textContent=label;
-}
-
-let toastT;
-function toast(msg){
-  const el=document.getElementById('toast');
-  el.textContent=msg;
-  el.classList.add('show');
-  clearTimeout(toastT);
-  toastT=setTimeout(()=>el.classList.remove('show'),2800);
-}
+// ═══════════════ INIT ═══════════════
+marked.setOptions({ breaks: true, gfm: true });
+document.getElementById('btn-new').addEventListener('click', showWelcome);
+document.querySelectorAll('textarea').forEach(ta => {
+  ta.addEventListener('input', function() {
+    this.style.height='auto';
+    this.style.height=Math.min(this.scrollHeight,128)+'px';
+  });
+});
+loadSessions();
 </script>
 </body>
 </html>

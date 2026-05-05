@@ -111,7 +111,7 @@ def _start_intake_silently(session_id: str, case_type: str, initial_text: str) -
     try:
         resp = start_intake(session_id, case_type, initial_text)
         st.session_state.case_id       = resp["case_id"]
-        st.session_state.provided_fields = dict(resp.get("pre_filled", {}))
+        st.session_state.provided_fields = dict(resp.get("provided_fields") or resp.get("pre_filled") or {})
         missing_req = resp.get("missing_required", [])
         st.session_state.missing_fields = [f["id"] for f in missing_req]
         st.session_state.flow_state = (
@@ -130,8 +130,11 @@ def _update_intake(case_id: str, text: str) -> None:
     try:
         resp = provide_intake(case_id, text)
         # Merge newly extracted fields into local state
-        newly_filled = resp.get("pre_filled", {})
-        st.session_state.provided_fields.update(newly_filled)
+        full_fields = resp.get("provided_fields")
+        if full_fields:
+            st.session_state.provided_fields = dict(full_fields)
+        else:
+            st.session_state.provided_fields.update(resp.get("pre_filled", {}))
         missing_req = resp.get("missing_required", [])
         st.session_state.missing_fields = [f["id"] for f in missing_req]
         if not missing_req:

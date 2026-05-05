@@ -641,6 +641,7 @@ class QuestionResponse(BaseModel):
     answer:            str
     session_id:        str
     offer_complaint:   bool       = False  # tells frontend to show "Generate Complaint" button
+    case_id:           str | None = None   # case_session UUID when offer_complaint=True
     case_type:         str        = None   # e.g. "eminent_domain", "personal_injury", etc.
     required_elements: list[dict] = []     # flat element list for the detected case type
     sections:          dict       = {}     # ordered section_name → [field_id, ...] for UI grouping
@@ -780,6 +781,7 @@ def _get_case_state_for_session(conn, chat_session_id: str) -> dict | None:
     if not row:
         return None
     return {
+        "case_id":         row["case_id"],
         "case_type":       row["case_type"],
         "provided_fields": json.loads(row["provided_fields"])  if row["provided_fields"]  else {},
         "missing_fields":  json.loads(row["missing_fields"])   if row["missing_fields"]   else [],
@@ -992,10 +994,13 @@ async def post_question(body: QuestionRequest, request: Request):
         f"ready_to_draft={ready_to_draft} | fields_extracted={len(extracted_fields)}"
     )
 
+    case_id_for_response = updated_state.get("case_id") if updated_state else None
+
     return QuestionResponse(
         answer=answer,
         session_id=session_id,
         offer_complaint=offer_complaint,
+        case_id=case_id_for_response if offer_complaint else None,
         case_type=effective_case_type or "other",
         required_elements=required_elements,
         sections=sections,
