@@ -1,0 +1,568 @@
+{
+  "info": {
+    "name": "Nyaay Legal AI — Full API",
+    "_postman_id": "nyaay-legal-ai-v1",
+    "description": "Complete Postman collection for the Nyaay Legal AI backend (FastAPI, port 9000). Covers chat, session management, intake, complaint drafting, and document export. Run python app.py first.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:9000",
+      "type": "string",
+      "description": "Backend base URL. Change to your server IP for remote testing."
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "string",
+      "description": "Set automatically by the Send Message request via test script."
+    },
+    {
+      "key": "case_id",
+      "value": "",
+      "type": "string",
+      "description": "Set manually after intake/start returns a case_id."
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Returns server status. Confirms the backend is up and the Anthropic API key is configured."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"status\": \"ok\",\n  \"model\": \"claude-haiku-4-5-20251001\",\n  \"anthropic_key_set\": true\n}"
+            }
+          ]
+        },
+        {
+          "name": "Serve UI (HTML)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": ["{{base_url}}"],
+              "path": [""]
+            },
+            "description": "Returns ui.html as text/html. This is the frontend entry point — open in browser."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chat",
+      "item": [
+        {
+          "name": "Send Message (first turn — no session)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.session_id) {",
+                  "    pm.collectionVariables.set('session_id', json.session_id);",
+                  "    console.log('session_id saved:', json.session_id);",
+                  "}",
+                  "if (json.case_id) {",
+                  "    pm.collectionVariables.set('case_id', json.case_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"My client was rear-ended on the Brooklyn Bridge last month by a truck driver. She has a broken arm and missed 6 weeks of work. The driver was employed by FastFreight Inc.\",\n  \"session_id\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/questions",
+              "host": ["{{base_url}}"],
+              "path": ["questions"]
+            },
+            "description": "Send the first message. Pass session_id=null — the backend creates a new session and returns the ID. Save the returned session_id for all subsequent turns.\n\nKey response fields:\n- answer: AI attorney response text\n- session_id: persist this across all turns\n- offer_complaint: true = show Generate Complaint button\n- case_type: detected case type (e.g. personal_injury)\n- required_elements: list of legal elements needed for this case type"
+          },
+          "response": [
+            {
+              "name": "200 — New session created",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"answer\": \"Based on the facts you've described, your client appears to have a strong personal injury claim under NY negligence law...\",\n  \"session_id\": \"b3a7c1d2-e4f5-6789-abcd-ef0123456789\",\n  \"offer_complaint\": false,\n  \"case_type\": \"personal_injury\",\n  \"required_elements\": [\n    { \"id\": \"duty\", \"label\": \"Duty of Care\", \"description\": \"Defendant owed a duty to plaintiff\" },\n    { \"id\": \"breach\", \"label\": \"Breach\", \"description\": \"Defendant breached that duty\" }\n  ],\n  \"sections\": {}\n}"
+            }
+          ]
+        },
+        {
+          "name": "Send Message (follow-up turn)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"Her name is Maria Gonzalez and the accident happened on April 3rd 2025.\",\n  \"session_id\": \"{{session_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/questions",
+              "host": ["{{base_url}}"],
+              "path": ["questions"]
+            },
+            "description": "Continue an existing chat session. Always pass session_id from the first response. When offer_complaint becomes true, start the intake flow."
+          }
+        },
+        {
+          "name": "Send Message (jurisdiction blocked — non-NY)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"My client was injured in a car accident in California.\",\n  \"session_id\": null\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/questions",
+              "host": ["{{base_url}}"],
+              "path": ["questions"]
+            },
+            "description": "Demonstrates the NY jurisdiction filter. Non-NY questions are rejected with a polite message. offer_complaint=false, case_type='unsupported'."
+          },
+          "response": [
+            {
+              "name": "200 — Jurisdiction blocked",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"answer\": \"I can only assist with New York legal matters at this time...\",\n  \"session_id\": \"new-session-id\",\n  \"offer_complaint\": false,\n  \"case_type\": \"unsupported\",\n  \"required_elements\": [],\n  \"sections\": {}\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sessions",
+      "item": [
+        {
+          "name": "List All Sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["sessions"]
+            },
+            "description": "Returns all chat sessions ordered by creation date descending. Use to populate the sidebar session list."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "[\n  {\n    \"id\": \"b3a7c1d2-e4f5-6789-abcd-ef0123456789\",\n    \"title\": \"My client was rear-ended on the Brooklyn...\",\n    \"created_at\": \"2026-05-05T10:30:00\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Get Session History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/history/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["history", "{{session_id}}"]
+            },
+            "description": "Returns all messages for a session in chronological order. Use to restore chat history when a user reopens a previous session."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "[\n  {\n    \"role\": \"user\",\n    \"content\": \"My client was rear-ended...\",\n    \"timestamp\": \"2026-05-05T10:30:01\"\n  },\n  {\n    \"role\": \"assistant\",\n    \"content\": \"Based on the facts you've described...\",\n    \"timestamp\": \"2026-05-05T10:30:03\"\n  }\n]"
+            }
+          ]
+        },
+        {
+          "name": "Clear Session History",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/history/{{session_id}}/clear",
+              "host": ["{{base_url}}"],
+              "path": ["history", "{{session_id}}", "clear"]
+            },
+            "description": "Deletes all messages in a session but keeps the session record itself."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"message\": \"Chat history cleared.\",\n  \"session_id\": \"b3a7c1d2-e4f5-6789-abcd-ef0123456789\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Delete Session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/sessions/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["sessions", "{{session_id}}"]
+            },
+            "description": "Permanently deletes a session and all its messages. This is irreversible."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"message\": \"Session deleted.\",\n  \"session_id\": \"b3a7c1d2-e4f5-6789-abcd-ef0123456789\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Intake",
+      "item": [
+        {
+          "name": "Start Intake",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.case_id) {",
+                  "    pm.collectionVariables.set('case_id', json.case_id);",
+                  "    console.log('case_id saved:', json.case_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"case_type\": \"personal_injury\",\n  \"initial_text\": \"My client Maria Gonzalez was rear-ended on the Brooklyn Bridge on April 3rd 2025 by a driver from FastFreight Inc. She has a broken arm.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/intake/start",
+              "host": ["{{base_url}}"],
+              "path": ["intake", "start"]
+            },
+            "description": "Call once when offer_complaint first becomes true in a /questions response.\n\nRequired fields:\n- session_id: the chat session ID from /questions\n- case_type: the detected case type (e.g. personal_injury)\n- initial_text: the user's last message or a summary — used to auto-extract fields\n\nThe backend auto-fills every field it can detect from initial_text. The response shows what was auto-filled and what is still missing.\n\nSave the returned case_id — it is used for all subsequent intake, draft, and document calls."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"case_id\": \"c7d8e9f0-1234-5678-abcd-ef0123456789\",\n  \"case_type\": \"personal_injury\",\n  \"is_complete\": false,\n  \"pre_filled\": {\n    \"plaintiff_name\": \"Maria Gonzalez\",\n    \"incident_date\": \"2025-04-03\",\n    \"incident_location\": \"Brooklyn Bridge\",\n    \"injury_description\": \"broken arm\",\n    \"defendant_name\": \"FastFreight Inc.\"\n  },\n  \"missing_required\": [\n    { \"id\": \"incident_description\", \"label\": \"Incident Description\", \"section\": \"Incident Details\" }\n  ],\n  \"missing_optional\": [\n    { \"id\": \"witness_names\", \"label\": \"Witness Names\", \"section\": \"Evidence\" }\n  ],\n  \"sections_display\": {\n    \"Parties\": {\n      \"fields\": [\n        { \"id\": \"plaintiff_name\", \"label\": \"Plaintiff Name\", \"value\": \"Maria Gonzalez\", \"filled\": true, \"required\": true },\n        { \"id\": \"defendant_name\", \"label\": \"Defendant Name\", \"value\": \"FastFreight Inc.\", \"filled\": true, \"required\": true }\n      ]\n    }\n  },\n  \"validation\": { \"valid\": true, \"issues\": [] }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Provide More Information",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"The driver ran a red light and hit her from behind. There were two witnesses: Tom Lee and Sarah Park.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/intake/{{case_id}}/provide",
+              "host": ["{{base_url}}"],
+              "path": ["intake", "{{case_id}}", "provide"]
+            },
+            "description": "Call this in parallel with /questions for every user message after intake has started.\n\nThe backend extracts any new fields from the text, merges them with previously collected fields, re-validates, and returns the updated state.\n\nCheck is_complete=true to know all required fields are collected. When complete, the Generate Complaint button should be fully enabled."
+          },
+          "response": [
+            {
+              "name": "200 OK — fields updated",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"case_id\": \"c7d8e9f0-1234-5678-abcd-ef0123456789\",\n  \"case_type\": \"personal_injury\",\n  \"is_complete\": true,\n  \"pre_filled\": {\n    \"plaintiff_name\": \"Maria Gonzalez\",\n    \"incident_date\": \"2025-04-03\",\n    \"incident_description\": \"Driver ran a red light and hit from behind\",\n    \"witness_names\": \"Tom Lee, Sarah Park\"\n  },\n  \"missing_required\": [],\n  \"missing_optional\": [],\n  \"sections_display\": {},\n  \"validation\": { \"valid\": true, \"issues\": [] }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Intake State",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/intake/{{case_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["intake", "{{case_id}}"]
+            },
+            "description": "Returns the current intake state for a case. Use on page reload to restore the intake UI without re-running extraction."
+          }
+        },
+        {
+          "name": "Validate Case Fields",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/intake/validate/{{case_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["intake", "validate", "{{case_id}}"]
+            },
+            "description": "Runs field-level + SOL validation and returns the result without changing any state. Use to check whether a case is ready to draft."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"valid\": true,\n  \"issues\": [],\n  \"warnings\": [\n    { \"field\": \"incident_date\", \"message\": \"Incident date is within the statute of limitations (3 years for personal injury).\" }\n  ]\n}"
+            }
+          ]
+        },
+        {
+          "name": "Force Draft (proceed with missing fields)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/intake/{{case_id}}/force",
+              "host": ["{{base_url}}"],
+              "path": ["intake", "{{case_id}}", "force"]
+            },
+            "description": "Marks the intake as force_draft=true. After this, POST /draft/{case_id} will proceed even if required fields are missing. Missing fields will appear as [UNKNOWN] in the generated complaint.\n\nShow the attorney a warning listing which fields will be [UNKNOWN] before calling this."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"case_id\": \"c7d8e9f0-1234-5678-abcd-ef0123456789\",\n  \"force_draft\": true,\n  \"missing_required\": [\n    { \"id\": \"incident_description\", \"label\": \"Incident Description\" }\n  ],\n  \"message\": \"Force draft enabled. Missing fields will appear as [UNKNOWN] in the complaint.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Case Progress",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/case/{{case_id}}/progress",
+              "host": ["{{base_url}}"],
+              "path": ["case", "{{case_id}}", "progress"]
+            },
+            "description": "Returns a 0–100 completion percentage and field breakdown. Poll this to drive a progress bar in the UI while the user is chatting."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"percent\": 75,\n  \"provided_fields\": {\n    \"plaintiff_name\": \"Maria Gonzalez\",\n    \"incident_date\": \"2025-04-03\",\n    \"incident_location\": \"Brooklyn Bridge\",\n    \"injury_description\": \"broken arm\"\n  },\n  \"missing_fields\": [\"incident_description\"],\n  \"total_required\": 5,\n  \"filled_required\": 4\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Complaint Draft",
+      "item": [
+        {
+          "name": "Generate Complaint",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/draft/{{case_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["draft", "{{case_id}}"]
+            },
+            "description": "Generates a formal NY legal complaint using Claude Sonnet. The draft is cached after the first call — subsequent calls return from_cache=true instantly with no additional API charge.\n\nReturns 422 if required fields are missing and force_draft has not been set. Call PATCH /intake/{case_id}/force first to proceed with [UNKNOWN] placeholders.\n\nword_count and unknown_count help the UI show quality indicators."
+          },
+          "response": [
+            {
+              "name": "200 OK — draft generated",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"case_id\": \"c7d8e9f0-1234-5678-abcd-ef0123456789\",\n  \"case_type\": \"personal_injury\",\n  \"complaint\": \"SUPREME COURT OF THE STATE OF NEW YORK\\nCOUNTY OF KINGS\\n\\nMARIA GONZALEZ,\\n                Plaintiff,\\n\\n    -against-\\n\\nFASTFREIGHT INC. and JOHN DOE,\\n                Defendants.\\n\\nIndex No.: [UNKNOWN]\\n\\nCOMPLAINT\\n...\",\n  \"from_cache\": false,\n  \"word_count\": 912,\n  \"unknown_count\": 1\n}"
+            },
+            {
+              "name": "422 — Missing required fields",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"detail\": {\n    \"message\": \"Cannot generate complaint — 1 required field is missing.\",\n    \"missing_count\": 1,\n    \"fields\": [\n      { \"field_id\": \"incident_description\", \"question\": \"Please describe how the incident occurred.\" }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Cached Draft",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/draft/{{case_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["draft", "{{case_id}}"]
+            },
+            "description": "Returns the cached complaint draft if one exists. Use on page reload to restore a previously generated draft. Returns 404 if no draft has been generated yet."
+          },
+          "response": [
+            {
+              "name": "200 OK — from cache",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"case_id\": \"c7d8e9f0-1234-5678-abcd-ef0123456789\",\n  \"case_type\": \"personal_injury\",\n  \"complaint\": \"SUPREME COURT OF THE STATE OF NEW YORK...\",\n  \"from_cache\": true,\n  \"word_count\": 912,\n  \"unknown_count\": 1\n}"
+            },
+            {
+              "name": "404 — No draft yet",
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"detail\": \"No complaint draft found for case 'c7d8e9f0'. Generate one via POST /draft/c7d8e9f0.\"\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Document Export",
+      "item": [
+        {
+          "name": "Download DOCX",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attorney_name\": \"Jane Smith, Esq.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/document/{{case_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["document", "{{case_id}}"]
+            },
+            "description": "Generates and downloads the complaint as a Word (.docx) file. The attorney_name field is injected into the signature block. If omitted, [ATTORNEY NAME] appears as a placeholder.\n\nRequires POST /draft/{case_id} to have been called first.\n\nIn the browser use a fetch() with blob() to trigger the download."
+          },
+          "response": [
+            {
+              "name": "200 — DOCX file download",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                { "key": "Content-Type", "value": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+                { "key": "Content-Disposition", "value": "attachment; filename=\"complaint_personal-injury_c7d8e9f0.docx\"" }
+              ]
+            },
+            {
+              "name": "422 — No draft yet",
+              "status": "Unprocessable Entity",
+              "code": 422,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"detail\": \"No complaint draft found for case 'c7d8e9f0'. Generate the complaint first via POST /draft/c7d8e9f0.\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Download PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attorney_name\": \"Jane Smith, Esq.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/document/{{case_id}}/pdf",
+              "host": ["{{base_url}}"],
+              "path": ["document", "{{case_id}}", "pdf"]
+            },
+            "description": "Same as Download DOCX but returns a PDF. Uses ReportLab (pure Python — no Node.js). Requires POST /draft/{case_id} first."
+          }
+        },
+        {
+          "name": "Document Status (no file generated)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/document/{{case_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["document", "{{case_id}}", "status"]
+            },
+            "description": "Checks whether a draft exists and is ready to export. Does not generate any file. Use to decide whether to enable download buttons."
+          },
+          "response": [
+            {
+              "name": "200 OK",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "body": "{\n  \"case_id\": \"c7d8e9f0-1234-5678-abcd-ef0123456789\",\n  \"draft_exists\": true,\n  \"case_type\": \"personal_injury\",\n  \"word_count\": 912,\n  \"unknown_count\": 1,\n  \"ready_to_export\": true\n}"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

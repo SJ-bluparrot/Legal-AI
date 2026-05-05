@@ -96,6 +96,11 @@ app.add_middleware(
 #   Authorization: Bearer <API_KEY>
 # ──────────────────────────────────────────────
 from fastapi.responses import JSONResponse, HTMLResponse
+from pathlib import Path
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def serve_ui():
+    return Path("ui.html").read_text()
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
