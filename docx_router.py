@@ -74,46 +74,18 @@ class DocumentRequest(BaseModel):
 # Shared DB helper — imported pattern from app.py
 # Using the same lazy-import approach to avoid circular imports.
 # ──────────────────────────────────────────────
-import os
-import sqlite3
-from contextlib import contextmanager
-
-DB_PATH = os.getenv("DB_PATH", "chat_history.db")
+from db import get_db
 
 
-@contextmanager
-def _get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Document router DB error: {e}")
-        raise
-    finally:
-        conn.close()
-
-
-def _load_case_session(case_id: str) -> sqlite3.Row:
-    """
-    Load a case_session row. Raises 404 if not found, 422 if no draft exists.
-    """
-    with _get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM case_sessions WHERE case_id = ?", (case_id,)
-        ).fetchone()
-
-    if not row:
+def _load_case_session(case_id: str) -> dict:
+    """Load a case_session document. Raises 404 if not found."""
+    doc = get_db().case_sessions.find_one({"_id": case_id})
+    if not doc:
         raise HTTPException(
             status_code=404,
             detail=f"Case session '{case_id}' not found."
         )
-
-    return row
+    return doc
 
 
 def _count_unknowns(text: str) -> int:
@@ -261,10 +233,9 @@ async def generate_pdf_document(case_id: str, request: DocumentRequest = None):
     complaint_text = row["draft_text"]
     attorney_name  = (request.attorney_name or "").strip()
 
-    # Parse structured fields so the PDF generator can build a proper NY caption
-    import json as _json
-    _raw = row["provided_fields"] or "{}"
-    case_fields = _json.loads(_raw) if isinstance(_raw, str) else (_raw or {})
+    # provided_fields is already a dict from MongoDB
+    case_fields = dict(row.get("provided_fields") or {})
+    case_fields.pop("__sources__", None)
 
     logger.info(
         f"POST /document/{case_id}/pdf | case_type={case_type} | "

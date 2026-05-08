@@ -51,13 +51,12 @@ Usage:
 import logging
 import os
 import re
-import sqlite3
 import uuid
-from contextlib import contextmanager
 from datetime import datetime
 
 import anthropic
 
+from db import get_db
 from utils import normalize_case_fields, build_court_caption   # shared utilities — single definition in utils.py
 
 logger = logging.getLogger(__name__)
@@ -68,12 +67,9 @@ logger = logging.getLogger(__name__)
 ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY", "")
 CLAUDE_MODEL        = "claude-sonnet-4-6"
 HAIKU_CLEANUP_MODEL = "claude-haiku-4-5-20251001"  # Used for complaint cleanup
-CLAUDE_MAX_TOKENS  = 1800                  # Capped at 1800 — safer under load; prompt tokens
-                                            # + output tokens must stay within context window
+CLAUDE_MAX_TOKENS  = 4096                  # 4096 allows full complaints (20–30 paragraphs)
 CLAUDE_TIMEOUT_SEC = 60                    # 60s timeout — Claude Sonnet typically responds
                                             # in 10–30s; 30s was too tight under load
-
-DB_PATH = os.getenv("DB_PATH", "chat_history.db")
 
 # ──────────────────────────────────────────────
 # Singleton Claude client
@@ -96,25 +92,6 @@ else:
         "ANTHROPIC_API_KEY not set — Claude client not initialised. "
         "Complaint drafting will fail until the key is configured."
     )
-
-# ──────────────────────────────────────────────
-# DB helper (mirrors app.py pattern — no circular import)
-# ──────────────────────────────────────────────
-@contextmanager
-def _get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Drafter DB error: {e}")
-        raise
-    finally:
-        conn.close()
 
 
 # ══════════════════════════════════════════════
@@ -184,6 +161,38 @@ def _system_prompt() -> str:
     )
 
 
+def _derive_county(*location_fields: str) -> str:
+    """
+    Derive the NY county from one or more location strings.
+    Checks each field in order; returns the first match.
+    Defaults to NEW YORK (Manhattan) when no borough signal is found —
+    safe because the entire system is NY-only.
+    """
+    for loc in location_fields:
+        if not loc or loc == '[UNKNOWN]':
+            continue
+        s = loc.lower()
+        if any(x in s for x in ['manhattan', 'new york county']):
+            return 'NEW YORK'
+        if any(x in s for x in ['brooklyn', 'kings']):
+            return 'KINGS'
+        if 'queens' in s:
+            return 'QUEENS'
+        if 'bronx' in s:
+            return 'BRONX'
+        if 'staten island' in s or 'richmond' in s:
+            return 'RICHMOND'
+        # NYC zip codes: 100xx–104xx = Manhattan, 112xx = Brooklyn, etc.
+        import re as _re
+        zip_match = _re.search(r'\b(1(?:00|01|02|03|04)\d\d)\b', s)
+        if zip_match:
+            return 'NEW YORK'
+        zip_match = _re.search(r'\b(112\d\d)\b', s)
+        if zip_match:
+            return 'KINGS'
+    return 'NEW YORK'
+
+
 def _build_personal_injury_prompt(fields: dict) -> str:
     plaintiff  = fields.get('plaintiff_name',    '[UNKNOWN]')
     defendant  = fields.get('defendant_name',    '[UNKNOWN]')
@@ -195,20 +204,7 @@ def _build_personal_injury_prompt(fields: dict) -> str:
     expenses   = fields.get('medical_expenses',  'to be determined at trial')
     wages      = fields.get('lost_wages',        'to be determined at trial')
 
-    # Derive county from location for the caption venue block
-    location_lower = location.lower()
-    if any(x in location_lower for x in ['manhattan', 'new york county']):
-        county = 'NEW YORK'
-    elif any(x in location_lower for x in ['brooklyn', 'kings']):
-        county = "KINGS"
-    elif 'queens' in location_lower:
-        county = 'QUEENS'
-    elif 'bronx' in location_lower:
-        county = 'BRONX'
-    elif 'staten island' in location_lower or 'richmond' in location_lower:
-        county = 'RICHMOND'
-    else:
-        county = 'NEW YORK'
+    county = _derive_county(location)
 
     dash_line = "-" * 73 + "X"
 
@@ -274,11 +270,15 @@ Then write the WHEREFORE clause followed by a dated signature block and defendan
 
 
 def _build_eminent_domain_prompt(fields: dict) -> str:
-    return f"""Draft a formal civil complaint for an eminent domain / inverse condemnation case.
+    county = _derive_county(fields.get('property_address', ''))
+    dash_line = "-" * 73 + "X"
+    plaintiff = fields.get('plaintiff_name', '[UNKNOWN]')
+    defendant = fields.get('defendant_name', '[UNKNOWN]')
+    return f"""Draft a formal Verified Complaint for an eminent domain / inverse condemnation case in NY Supreme Court.
 
 CASE INFORMATION:
-- Property owner (Plaintiff): {fields.get('plaintiff_name', '[UNKNOWN]')}
-- Government entity (Defendant): {fields.get('defendant_name', '[UNKNOWN]')}
+- Property owner (Plaintiff): {plaintiff}
+- Government entity (Defendant): {defendant}
 - Date of taking: {fields.get('taking_date', '[UNKNOWN]')}
 - Property address / description: {fields.get('property_address', '[UNKNOWN]')}
 - Stated public use by government: {fields.get('public_use_stated', '[UNKNOWN]')}
@@ -288,8 +288,24 @@ CASE INFORMATION:
 - Additional damages: {fields.get('damages_claimed', '[UNKNOWN]')}
 - Appraisal obtained: {fields.get('appraisal_report', '[UNKNOWN]')}
 
+Begin with this court caption block:
+
+SUPREME COURT OF THE STATE OF NEW YORK
+COUNTY OF {county}
+{dash_line}
+{plaintiff.upper()},
+                              Plaintiff,
+
+         -against-                                VERIFIED COMPLAINT
+
+{defendant.upper()},
+
+                                                  Index No.:
+                              Defendants.
+{dash_line}
+
 The complaint must include:
-1. Caption (court, parties, case number as [CASE NO. TO BE ASSIGNED])
+1. Caption as shown above (already provided — do not rewrite it)
 2. PARTIES section
 3. JURISDICTION AND VENUE section citing 42 U.S.C. § 1983 or applicable state law
 4. FACTUAL ALLEGATIONS section with numbered paragraphs covering:
@@ -312,11 +328,18 @@ The complaint must include:
 
 
 def _build_contract_dispute_prompt(fields: dict) -> str:
-    return f"""Draft a formal civil complaint for a breach of contract case.
+    county = _derive_county(
+        fields.get('incident_location', ''),
+        fields.get('plaintiff_name', ''),  # last resort; usually not a location
+    )
+    dash_line = "-" * 73 + "X"
+    plaintiff = fields.get('plaintiff_name', '[UNKNOWN]')
+    defendant = fields.get('defendant_name', '[UNKNOWN]')
+    return f"""Draft a formal Verified Complaint for a breach of contract case in NY Supreme Court.
 
 CASE INFORMATION:
-- Plaintiff: {fields.get('plaintiff_name', '[UNKNOWN]')}
-- Defendant: {fields.get('defendant_name', '[UNKNOWN]')}
+- Plaintiff: {plaintiff}
+- Defendant: {defendant}
 - Contract date: {fields.get('contract_date', '[UNKNOWN]')}
 - Contract description: {fields.get('contract_description', '[UNKNOWN]')}
 - Written contract exists: {fields.get('written_contract', '[UNKNOWN]')}
@@ -327,8 +350,24 @@ CASE INFORMATION:
 - Damages claimed: {fields.get('damages_claimed', '[UNKNOWN]')}
 - Witnesses: {fields.get('witness_names', '[UNKNOWN]')}
 
+Begin with this court caption block:
+
+SUPREME COURT OF THE STATE OF NEW YORK
+COUNTY OF {county}
+{dash_line}
+{plaintiff.upper()},
+                              Plaintiff,
+
+         -against-                                VERIFIED COMPLAINT
+
+{defendant.upper()},
+
+                                                  Index No.:
+                              Defendants.
+{dash_line}
+
 The complaint must include:
-1. Caption (court, parties, case number as [CASE NO. TO BE ASSIGNED])
+1. Caption as shown above (already provided — do not rewrite it)
 2. PARTIES section
 3. JURISDICTION AND VENUE section
 4. FACTUAL ALLEGATIONS section with numbered paragraphs covering:
@@ -353,11 +392,15 @@ The complaint must include:
 
 
 def _build_property_damage_prompt(fields: dict) -> str:
-    return f"""Draft a formal civil complaint for a property damage / conversion case.
+    county = _derive_county(fields.get('incident_location', ''))
+    dash_line = "-" * 73 + "X"
+    plaintiff = fields.get('plaintiff_name', '[UNKNOWN]')
+    defendant = fields.get('defendant_name', '[UNKNOWN]')
+    return f"""Draft a formal Verified Complaint for a property damage / conversion case in NY Supreme Court.
 
 CASE INFORMATION:
-- Plaintiff (property owner): {fields.get('plaintiff_name', '[UNKNOWN]')}
-- Defendant: {fields.get('defendant_name', '[UNKNOWN]')}
+- Plaintiff (property owner): {plaintiff}
+- Defendant: {defendant}
 - Date of incident: {fields.get('incident_date', '[UNKNOWN]')}
 - Location of incident: {fields.get('incident_location', '[UNKNOWN]')}
 - Property description: {fields.get('property_description', '[UNKNOWN]')}
@@ -369,8 +412,24 @@ CASE INFORMATION:
 - Insurance claim status: {fields.get('insurance_claim', '[UNKNOWN]')}
 - Witnesses: {fields.get('witness_names', '[UNKNOWN]')}
 
+Begin with this court caption block:
+
+SUPREME COURT OF THE STATE OF NEW YORK
+COUNTY OF {county}
+{dash_line}
+{plaintiff.upper()},
+                              Plaintiff,
+
+         -against-                                VERIFIED COMPLAINT
+
+{defendant.upper()},
+
+                                                  Index No.:
+                              Defendants.
+{dash_line}
+
 The complaint must include:
-1. Caption (court, parties, case number as [CASE NO. TO BE ASSIGNED])
+1. Caption as shown above (already provided — do not rewrite it)
 2. PARTIES section
 3. JURISDICTION AND VENUE section
 4. FACTUAL ALLEGATIONS section with numbered paragraphs covering:
@@ -395,14 +454,20 @@ The complaint must include:
 
 
 def _build_family_law_prompt(fields: dict) -> str:
-    return f"""Draft a formal petition for dissolution of marriage (divorce) and related relief.
+    county = _derive_county(
+        fields.get('incident_location', ''),
+        fields.get('plaintiff_name', ''),
+    )
+    dash_line = "-" * 73 + "X"
+    plaintiff = fields.get('plaintiff_name', '[UNKNOWN]')
+    defendant = fields.get('defendant_name', '[UNKNOWN]')
+    return f"""Draft a formal Verified Complaint / Petition for dissolution of marriage (divorce) and related relief in NY Supreme Court.
 
 CASE INFORMATION:
-- Petitioner: {fields.get('plaintiff_name', '[UNKNOWN]')}
-- Respondent: {fields.get('defendant_name', '[UNKNOWN]')}
+- Petitioner: {plaintiff}
+- Respondent: {defendant}
 - Date of marriage: {fields.get('marriage_date', '[UNKNOWN]')}
 - Date of separation: {fields.get('separation_date', '[UNKNOWN]')}
-- State of jurisdiction: {fields.get('jurisdiction_state', '[UNKNOWN]')}
 - Grounds for divorce: {fields.get('grounds_for_divorce', '[UNKNOWN]')}
 - Children's names and ages: {fields.get('children_names', '[UNKNOWN]')}
 - Custody arrangement sought: {fields.get('custody_arrangement', '[UNKNOWN]')}
@@ -410,10 +475,26 @@ CASE INFORMATION:
 - Marital property: {fields.get('property_list', '[UNKNOWN]')}
 - Marital debts: {fields.get('debt_list', '[UNKNOWN]')}
 
+Begin with this court caption block:
+
+SUPREME COURT OF THE STATE OF NEW YORK
+COUNTY OF {county}
+{dash_line}
+{plaintiff.upper()},
+                              Plaintiff,
+
+         -against-                                VERIFIED COMPLAINT
+
+{defendant.upper()},
+
+                                                  Index No.:
+                              Defendant.
+{dash_line}
+
 The petition must include:
-1. Caption (court, parties, case number as [CASE NO. TO BE ASSIGNED])
+1. Caption as shown above (already provided — do not rewrite it)
 2. PARTIES section with residency allegations establishing jurisdiction
-3. JURISDICTION AND VENUE section (residency requirements, state statute citation as [STATE STATUTE])
+3. JURISDICTION AND VENUE section (cite DRL § 170 for grounds, DRL § 230 for residency)
 4. FACTUAL ALLEGATIONS section covering:
    - Date and place of marriage
    - Date of separation and length of marriage
@@ -424,9 +505,9 @@ The petition must include:
    - Proposed custody arrangement
    - Child support request
 6. PROPERTY AND DEBTS section:
-   - Request for equitable division
+   - Request for equitable division under DRL § 236(B)
    - Identification of significant marital assets and debts
-7. SPOUSAL SUPPORT section (if applicable)
+7. SPOUSAL SUPPORT section (if applicable, cite DRL § 236(B)(6))
 8. PRAYER FOR RELIEF requesting:
    - Dissolution of the marriage
    - Legal custody and physical custody order
@@ -439,27 +520,50 @@ The petition must include:
 
 
 def _build_criminal_defense_prompt(fields: dict) -> str:
-    return f"""Draft a formal criminal defense motion to dismiss or demurrer (pre-trial motion challenging the charges).
+    county = _derive_county(
+        fields.get('court_name', ''),
+        fields.get('incident_location', ''),
+    )
+    dash_line = "-" * 73 + "X"
+    defendant = fields.get('defendant_name', '[UNKNOWN]')
+    court_name = fields.get('court_name', f'SUPREME COURT OF THE STATE OF NEW YORK\nCOUNTY OF {county}')
+    case_number = fields.get('case_number', '[UNKNOWN]')
+    return f"""Draft a formal criminal defense Motion to Dismiss for insufficient evidence / lack of probable cause.
 
-NOTE: Criminal defense complaints are typically motions filed on behalf of the defendant.
-Draft this as a Motion to Dismiss for insufficient evidence / lack of probable cause.
+NOTE: This is a pre-trial motion filed in NY court on behalf of the defendant.
 
 CASE INFORMATION:
-- Defendant: {fields.get('defendant_name', '[UNKNOWN]')}
+- Defendant: {defendant}
 - Arresting agency: {fields.get('arresting_agency', '[UNKNOWN]')}
 - Date of arrest: {fields.get('arrest_date', '[UNKNOWN]')}
 - Date of alleged incident: {fields.get('incident_date', '[UNKNOWN]')}
 - Criminal charges: {fields.get('charges', '[UNKNOWN]')}
-- Court name: {fields.get('court_name', '[UNKNOWN]')}
-- Case number: {fields.get('case_number', '[UNKNOWN]')}
+- Court name: {court_name}
+- Case number: {case_number}
 - Bail amount: {fields.get('bail_amount', '[UNKNOWN]')}
 - Defense theory: {fields.get('defense_theory', '[UNKNOWN]')}
 - Prior criminal record: {fields.get('prior_record', '[UNKNOWN]')}
 - Defense witnesses: {fields.get('witness_names', '[UNKNOWN]')}
 - Exculpatory evidence: {fields.get('evidence_description', '[UNKNOWN]')}
 
+Begin with this court caption block:
+
+SUPREME COURT OF THE STATE OF NEW YORK
+COUNTY OF {county}
+{dash_line}
+THE PEOPLE OF THE STATE OF NEW YORK,
+                              Plaintiff,
+
+         -against-                                NOTICE OF MOTION
+                                                  TO DISMISS
+{defendant.upper()},
+
+                                                  Ind. No.: {case_number}
+                              Defendant.
+{dash_line}
+
 The motion must include:
-1. Caption (court, defendant, case number)
+1. Caption as shown above (already provided — do not rewrite it)
 2. INTRODUCTION summarizing the motion and relief requested
 3. STATEMENT OF FACTS with numbered paragraphs covering:
    - The arrest: date, agency, circumstances
@@ -467,7 +571,7 @@ The motion must include:
    - The defense's version of events
    - Exculpatory evidence available
 4. LEGAL ARGUMENT section:
-   - Standard for dismissal / demurrer
+   - Standard for dismissal under CPL § 210.20
    - Why the charges fail to state an offense OR lack probable cause
    - Constitutional arguments (Fourth Amendment if unlawful search/seizure,
      Fifth Amendment if self-incrimination, Sixth Amendment if right to counsel violated)
@@ -477,11 +581,18 @@ The motion must include:
 
 
 def _build_employment_dispute_prompt(fields: dict) -> str:
-    return f"""Draft a formal civil complaint for an employment dispute case.
+    county = _derive_county(
+        fields.get('incident_location', ''),
+        fields.get('defendant_name', ''),  # employer address often in name field
+    )
+    dash_line = "-" * 73 + "X"
+    plaintiff = fields.get('plaintiff_name', '[UNKNOWN]')
+    defendant = fields.get('defendant_name', '[UNKNOWN]')
+    return f"""Draft a formal Verified Complaint for an employment dispute case in NY Supreme Court.
 
 CASE INFORMATION:
-- Employee (Plaintiff): {fields.get('plaintiff_name', '[UNKNOWN]')}
-- Employer (Defendant): {fields.get('defendant_name', '[UNKNOWN]')}
+- Employee (Plaintiff): {plaintiff}
+- Employer (Defendant): {defendant}
 - Employment start date: {fields.get('employment_start_date', '[UNKNOWN]')}
 - Termination / incident date: {fields.get('termination_date', '[UNKNOWN]')}
 - Job title: {fields.get('job_title', '[UNKNOWN]')}
@@ -493,13 +604,29 @@ CASE INFORMATION:
 - Total damages claimed: {fields.get('damages_claimed', '[UNKNOWN]')}
 - Witnesses: {fields.get('witness_names', '[UNKNOWN]')}
 
+Begin with this court caption block:
+
+SUPREME COURT OF THE STATE OF NEW YORK
+COUNTY OF {county}
+{dash_line}
+{plaintiff.upper()},
+                              Plaintiff,
+
+         -against-                                VERIFIED COMPLAINT
+
+{defendant.upper()},
+
+                                                  Index No.:
+                              Defendant.
+{dash_line}
+
 The complaint must include:
-1. Caption (court, parties, case number as [CASE NO. TO BE ASSIGNED])
+1. Caption as shown above (already provided — do not rewrite it)
 2. PARTIES section
 3. JURISDICTION AND VENUE section
    - If discrimination claim: cite 42 U.S.C. § 2000e (Title VII), 29 U.S.C. § 621 (ADEA),
-     or 42 U.S.C. § 12101 (ADA) as applicable
-   - If wage claim: cite 29 U.S.C. § 201 (FLSA) as applicable
+     or 42 U.S.C. § 12101 (ADA) as applicable; also cite NY Executive Law § 296 (NYSHRL)
+   - If wage claim: cite 29 U.S.C. § 201 (FLSA) and NY Labor Law § 190 et seq.
 4. EXHAUSTION OF ADMINISTRATIVE REMEDIES (if EEOC charge was filed)
 5. FACTUAL ALLEGATIONS section with numbered paragraphs covering:
    - Employment history and job title
@@ -514,7 +641,7 @@ The complaint must include:
    - Hostile Work Environment (if applicable)
    - Retaliation (if applicable)
    - Breach of Employment Contract (if applicable)
-   - Wage and Hour Violations (if applicable) — cite FLSA
+   - Wage and Hour Violations (if applicable) — cite FLSA and NY Labor Law
 7. PRAYER FOR RELIEF requesting:
    - Back pay and front pay
    - Compensatory damages (emotional distress)
@@ -642,19 +769,16 @@ def _word_count(text: str) -> int:
 
 
 def _save_draft(case_id: str, draft_text: str) -> None:
-    """Persist the generated complaint and set draft_generated = 1."""
-    now = datetime.utcnow().isoformat()
-    with _get_db() as conn:
-        conn.execute(
-            """
-            UPDATE case_sessions
-            SET draft_generated = 1,
-                draft_text      = ?,
-                updated_at      = ?
-            WHERE case_id = ?
-            """,
-            (draft_text, now, case_id),
-        )
+    """Persist the generated complaint and set draft_generated = True."""
+    db = get_db()
+    db.case_sessions.update_one(
+        {"_id": case_id},
+        {"$set": {
+            "draft_generated": True,
+            "draft_text":      draft_text,
+            "updated_at":      datetime.utcnow(),
+        }},
+    )
     logger.info(f"Draft saved | case_id={case_id} | words={_word_count(draft_text)}")
 
 

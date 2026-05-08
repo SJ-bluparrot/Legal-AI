@@ -298,7 +298,7 @@ textarea{resize:none;}
           <div class="p-6 pt-0 relative z-10 -mt-8">
             <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-6 shadow-sm">
               <h3 class="font-headline-md text-on-surface mb-3">Case Summary</h3>
-              <p id="cr-summary" class="font-body-md text-body-md text-on-surface-variant leading-relaxed"></p>
+              <div id="cr-summary" class="font-body-md text-body-md text-on-surface-variant leading-relaxed"></div>
             </div>
           </div>
         </div>
@@ -783,9 +783,11 @@ function populateReadyScreen(d) {
     `<span class="material-symbols-outlined text-outline text-[18px]">gavel</span><span>${fmtCT(S.caseType)}</span>`;
 
   const last = [...S.messages].reverse().find(m=>m.role==='assistant');
-  document.getElementById('cr-summary').textContent = last
-    ? last.content.slice(0,350)+(last.content.length>350?'...':'')
-    : 'Comprehensive fact-gathering phase concluded.';
+  const summaryEl = document.getElementById('cr-summary');
+  summaryEl.classList.add('md-prose');
+  summaryEl.innerHTML = last
+    ? marked.parse(last.content)
+    : '<p>Comprehensive fact-gathering phase concluded.</p>';
 
   const grid = document.getElementById('cr-facts'); grid.innerHTML = '';
   Object.entries(provided).forEach(([id,val]) => {
@@ -823,7 +825,7 @@ function renderDraft() {
           <span class="material-symbols-outlined ${ai?'text-blue-600':'text-slate-600'} text-[14px]">${ai?'smart_toy':'person'}</span>
         </div></div>
       <div class="flex-1 ${ai?'bg-white':'bg-blue-50'} p-3 rounded-lg border ${ai?'border-slate-200':'border-blue-100'} shadow-sm">
-        <p class="text-sm text-slate-700 leading-relaxed">${esc(msg.content.slice(0,200))}${msg.content.length>200?'…':''}</p>
+        <div class="text-sm text-slate-700 leading-relaxed ${ai?'md-prose':''}">${ai ? marked.parse(msg.content) : esc(msg.content)}</div>
         <div class="mt-1.5 text-xs text-slate-400">${fmtTime(msg.ts)}</div>
       </div>`;
     hist.appendChild(div);

@@ -95,15 +95,15 @@ Storage:
     provided_fields and required_fields stored as JSON strings.
 """
 
-import json
 import logging
 import uuid
 from datetime import datetime
-from contextlib import contextmanager
 
-import sqlite3
 from fastapi import APIRouter, HTTPException
+from pymongo import DESCENDING
 from pydantic import BaseModel, field_validator
+
+from db import get_db
 
 from element_extractor import extract_elements, STATIC_ELEMENTS
 from entity_extractor  import extract_entities, merge_provided_fields
@@ -118,30 +118,6 @@ router = APIRouter(prefix="/intake", tags=["intake"])
 # This prevents a client sending an arbitrary string and triggering a model call.
 ALLOWED_CASE_TYPES = [ct for ct in STATIC_ELEMENTS if ct != "other"]
 
-# ──────────────────────────────────────────────
-# DB helpers — identical pattern to app.py
-# The router shares the same DB_PATH; importing DB_PATH from app would
-# create a circular import so we read the env var here directly.
-# ──────────────────────────────────────────────
-import os
-DB_PATH = os.getenv("DB_PATH", "chat_history.db")
-
-
-@contextmanager
-def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Intake DB error: {e}")
-        raise
-    finally:
-        conn.close()
 
 
 # ──────────────────────────────────────────────
@@ -539,28 +515,25 @@ async def intake_start(request: IntakeStartRequest):
     # Reuse the row already created by _upsert_case_session in /questions if one
     # exists for this chat session — merging any fields extracted there so data
     # the user provided in the chat phase is not lost when intake starts.
-    now = datetime.utcnow().isoformat()
+    now = datetime.utcnow()
+    db = get_db()
 
-    with get_db() as conn:
-        # Verify the parent chat session exists (soft guard — don't crash if not)
-        chat_row = conn.execute(
-            "SELECT id FROM sessions WHERE id = ?", (request.session_id,)
-        ).fetchone()
-        if not chat_row:
-            logger.warning(
-                f"Chat session '{request.session_id}' not found — "
-                f"creating case_session anyway (foreign key unenforced in SQLite)."
-            )
+    # Verify the parent chat session exists (soft guard — don't crash if not)
+    if not db.sessions.find_one({"_id": request.session_id}):
+        logger.warning(
+            f"Chat session '{request.session_id}' not found — "
+            f"creating case_session anyway."
+        )
 
-        # Check for an existing row from the /questions flow
-        existing = conn.execute(
-            "SELECT * FROM case_sessions WHERE chat_session_id = ? ORDER BY created_at DESC LIMIT 1",
-            (request.session_id,)
-        ).fetchone()
+    # Check for an existing document from the /questions flow
+    existing = db.case_sessions.find_one(
+        {"chat_session_id": request.session_id},
+        sort=[("created_at", DESCENDING)],
+    )
 
     if existing:
-        case_id = existing["case_id"]
-        prior = json.loads(existing["provided_fields"] or "{}") if existing["provided_fields"] else {}
+        case_id = existing["_id"]
+        prior = dict(existing.get("provided_fields", {}))
         prior.pop("__sources__", None)
         # Merge: newly extracted fields win only when they have real values
         for k, v in provided_fields.items():
@@ -578,31 +551,29 @@ async def intake_start(request: IntakeStartRequest):
     missing_required, _ = _compute_missing(elements, provided_fields)
     missing_field_ids   = [el["id"] for el in missing_required]
 
-    # Embed source-tracking metadata inside the JSON blob so it travels with
-    # provided_fields across DB reads/writes without a schema change.
+    # Embed source-tracking metadata inside the document.
     # The "__sources__" key is stripped by every consumer before use —
     # only intake_router reads and writes it.
     provided_fields_with_meta = {**provided_fields, "__sources__": extracted_sources}
 
-    with get_db() as conn:
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO case_sessions
-              (case_id, chat_session_id, case_type,
-               required_fields, provided_fields, missing_fields,
-               force_draft, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-            """,
-            (
-                case_id,
-                request.session_id,
-                request.case_type,
-                json.dumps(all_field_ids),               # stores all field IDs (req + optional)
-                json.dumps(provided_fields_with_meta),   # includes __sources__
-                json.dumps(missing_field_ids),
-                now, now,
-            ),
-        )
+    db.case_sessions.replace_one(
+        {"_id": case_id},
+        {
+            "_id":             case_id,
+            "chat_session_id": request.session_id,
+            "case_type":       request.case_type,
+            "required_fields": all_field_ids,
+            "provided_fields": provided_fields_with_meta,
+            "missing_fields":  missing_field_ids,
+            "force_draft":     False,
+            "draft_generated": False,
+            "draft_text":      None,
+            "validation_result": None,
+            "created_at":      now,
+            "updated_at":      now,
+        },
+        upsert=True,
+    )
 
     logger.info(
         f"[{req_id}] Intake case_session created | case_id={case_id} | "
@@ -619,12 +590,11 @@ async def intake_start(request: IntakeStartRequest):
         force_draft     = False,   # force_draft is always False at start
     )
 
-    # Persist validation result to DB
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE case_sessions SET validation_result = ?, updated_at = ? WHERE case_id = ?",
-            (json.dumps(validation), datetime.utcnow().isoformat(), case_id),
-        )
+    # Persist validation result
+    db.case_sessions.update_one(
+        {"_id": case_id},
+        {"$set": {"validation_result": validation, "updated_at": datetime.utcnow()}},
+    )
 
     logger.info(
         f"[{req_id}] Intake start validated | case_id={case_id} | "
@@ -678,17 +648,15 @@ async def intake_provide(case_id: str, request: IntakeProvideRequest):
         )
 
     # ── Step 1: Load case_session ─────────────────────────────────────────────
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM case_sessions WHERE case_id = ?", (case_id,)
-        ).fetchone()
+    db = get_db()
+    row = db.case_sessions.find_one({"_id": case_id})
 
     if not row:
         raise HTTPException(status_code=404, detail=f"Case session '{case_id}' not found.")
 
     case_type       = row["case_type"]
-    provided_fields = json.loads(row["provided_fields"])
-    required_ids    = json.loads(row["required_fields"])
+    provided_fields = dict(row.get("provided_fields", {}))
+    required_ids    = row.get("required_fields", [])
 
     # ── Unpack source metadata from stored provided_fields ────────────────────
     # __sources__ is embedded in the JSON blob at /intake/start.
@@ -742,23 +710,16 @@ async def intake_provide(case_id: str, request: IntakeProvideRequest):
     missing_field_ids   = [el["id"] for el in missing_required]
 
     # ── Step 5: Persist updated state ─────────────────────────────────────────
-    now = datetime.utcnow().isoformat()
     # Re-embed source metadata before saving so the next /provide call can load it.
     updated_fields_with_meta = {**updated_fields, "__sources__": updated_sources}
-    with get_db() as conn:
-        conn.execute(
-            """
-            UPDATE case_sessions
-            SET provided_fields = ?, missing_fields = ?, updated_at = ?
-            WHERE case_id = ?
-            """,
-            (
-                json.dumps(updated_fields_with_meta),   # includes __sources__
-                json.dumps(missing_field_ids),
-                now,
-                case_id,
-            ),
-        )
+    db.case_sessions.update_one(
+        {"_id": case_id},
+        {"$set": {
+            "provided_fields": updated_fields_with_meta,
+            "missing_fields":  missing_field_ids,
+            "updated_at":      datetime.utcnow(),
+        }},
+    )
 
     logger.info(
         f"[{req_id}] Intake provide done | case_id={case_id} | "
@@ -775,11 +736,10 @@ async def intake_provide(case_id: str, request: IntakeProvideRequest):
     )
 
     # Persist updated validation result
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE case_sessions SET validation_result = ?, updated_at = ? WHERE case_id = ?",
-            (json.dumps(validation), datetime.utcnow().isoformat(), case_id),
-        )
+    db.case_sessions.update_one(
+        {"_id": case_id},
+        {"$set": {"validation_result": validation, "updated_at": datetime.utcnow()}},
+    )
 
     logger.info(
         f"[{req_id}] Intake provide validated | case_id={case_id} | "
@@ -829,28 +789,23 @@ async def validate_case(case_id: str):
             "sol_warning": null
         }
     """
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM case_sessions WHERE case_id = ?", (case_id,)
-        ).fetchone()
+    db = get_db()
+    row = db.case_sessions.find_one({"_id": case_id})
 
     if not row:
         raise HTTPException(status_code=404, detail=f"Case session '{case_id}' not found.")
 
     case_type       = row["case_type"]
-    provided_fields = json.loads(row["provided_fields"])
-    provided_fields.pop("__sources__", None)   # strip metadata — not needed for validation
-    force_draft     = bool(row["force_draft"])
-    # Fresh computation is a safety net for sessions created before Day 6 was deployed.
-    stored = row["validation_result"]
+    provided_fields = dict(row.get("provided_fields", {}))
+    provided_fields.pop("__sources__", None)
+    force_draft     = bool(row.get("force_draft", False))
+    stored          = row.get("validation_result")
+
     if stored:
-        try:
-            validation = json.loads(stored)
-            # Patch can_draft using the current force_draft flag
-            # (force_draft may have been set after the last validation run)
-            validation["can_draft"] = validation.get("is_valid", False) or force_draft
-        except (json.JSONDecodeError, TypeError):
-            validation = None
+        validation = dict(stored)
+        validation["can_draft"] = validation.get("is_valid", False) or force_draft
+    else:
+        validation = None
 
     if not stored or validation is None:
         result   = extract_elements(case_type, None, None)
@@ -861,12 +816,10 @@ async def validate_case(case_id: str):
             elements        = elements,
             force_draft     = force_draft,
         )
-        # Persist the freshly computed result
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE case_sessions SET validation_result = ?, updated_at = ? WHERE case_id = ?",
-                (json.dumps(validation), datetime.utcnow().isoformat(), case_id),
-            )
+        db.case_sessions.update_one(
+            {"_id": case_id},
+            {"$set": {"validation_result": validation, "updated_at": datetime.utcnow()}},
+        )
 
     logger.info(
         f"GET /validate/{case_id} | is_valid={validation.get('is_valid')} | "
@@ -900,18 +853,15 @@ async def intake_get(case_id: str):
     Used by the frontend to restore intake state on page reload or
     to check whether an intake session is already in progress.
     """
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM case_sessions WHERE case_id = ?", (case_id,)
-        ).fetchone()
+    db = get_db()
+    row = db.case_sessions.find_one({"_id": case_id})
 
     if not row:
         raise HTTPException(status_code=404, detail=f"Case session '{case_id}' not found.")
 
     case_type       = row["case_type"]
-    provided_fields = json.loads(row["provided_fields"])
-    provided_fields.pop("__sources__", None)   # strip metadata — keep API response clean
-    required_ids    = json.loads(row["required_fields"])
+    provided_fields = dict(row.get("provided_fields", {}))
+    provided_fields.pop("__sources__", None)
 
     result   = extract_elements(case_type, None, None)
     elements = result["elements"]
@@ -925,23 +875,15 @@ async def intake_get(case_id: str):
 
     missing_required, missing_optional = _compute_missing(elements, provided_fields)
 
-    # is_complete is true if all required fields are filled OR force_draft is set
-    is_complete = len(missing_required) == 0 or bool(row["force_draft"])
-
-    # Include the stored validation result if available
-    stored_validation = None
-    if row["validation_result"]:
-        try:
-            stored_validation = json.loads(row["validation_result"])
-        except (json.JSONDecodeError, TypeError):
-            stored_validation = None
+    is_complete = len(missing_required) == 0 or bool(row.get("force_draft", False))
+    stored_validation = row.get("validation_result")
 
     return {
         "case_id":          case_id,
         "case_type":        case_type,
         "chat_session_id":  row["chat_session_id"],
         "is_complete":      is_complete,
-        "force_draft":      bool(row["force_draft"]),
+        "force_draft":      bool(row.get("force_draft", False)),
         "provided_fields":  provided_fields,
         "missing_required": [
             {"id": el["id"], "label": el["label"], "section": el.get("section", "")}
@@ -952,9 +894,9 @@ async def intake_get(case_id: str):
             for el in missing_optional
         ],
         "sections_display": _build_sections_display(elements, sections, provided_fields),
-        "validation":       stored_validation,   # None if not yet validated
-        "created_at":       row["created_at"],
-        "updated_at":       row["updated_at"],
+        "validation":       stored_validation,
+        "created_at":       str(row.get("created_at", "")),
+        "updated_at":       str(row.get("updated_at", "")),
     }
 
 
@@ -974,22 +916,20 @@ async def intake_force_draft(case_id: str):
     the attorney exactly what will appear as [UNKNOWN] in the final complaint —
     they should not be surprised by missing content after clicking "proceed".
     """
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM case_sessions WHERE case_id = ?", (case_id,)
-        ).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail=f"Case session '{case_id}' not found.")
+    db = get_db()
+    row = db.case_sessions.find_one({"_id": case_id})
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Case session '{case_id}' not found.")
 
-        conn.execute(
-            "UPDATE case_sessions SET force_draft = 1, updated_at = ? WHERE case_id = ?",
-            (datetime.utcnow().isoformat(), case_id),
-        )
+    db.case_sessions.update_one(
+        {"_id": case_id},
+        {"$set": {"force_draft": True, "updated_at": datetime.utcnow()}},
+    )
 
     # Compute which required fields are still missing so the UI can warn the attorney
     case_type       = row["case_type"]
-    provided_fields = json.loads(row["provided_fields"])
-    provided_fields.pop("__sources__", None)   # strip metadata
+    provided_fields = dict(row.get("provided_fields", {}))
+    provided_fields.pop("__sources__", None)
 
     result   = extract_elements(case_type, None, None)
     elements = result["elements"]
@@ -1057,17 +997,15 @@ async def case_progress(case_id: str):
     required field that is still empty — so a frontend can display them
     directly without any further transformation.
     """
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM case_sessions WHERE case_id = ?", (case_id,)
-        ).fetchone()
+    db = get_db()
+    row = db.case_sessions.find_one({"_id": case_id})
 
     if not row:
         raise HTTPException(status_code=404, detail=f"Case session '{case_id}' not found.")
 
     case_type       = row["case_type"]
-    provided_fields = json.loads(row["provided_fields"])
-    provided_fields.pop("__sources__", None)   # strip metadata
+    provided_fields = dict(row.get("provided_fields", {}))
+    provided_fields.pop("__sources__", None)
 
     result   = extract_elements(case_type, None, None)
     elements = result["elements"]

@@ -1,6 +1,6 @@
 # Nyaay AI — Project Progress & Roadmap
 
-> Last updated: 2026-05-05
+> Last updated: 2026-05-08
 > Backend: http://localhost:9000 (Claude Haiku + Sonnet via Anthropic API)
 > Frontend: ui.html served at http://localhost:9000/ (Streamlit retired)
 
@@ -29,7 +29,7 @@
 - NY-first jurisdiction filter (3-step: NY allow → non-NY block → foreign block → assume NY)
 - Claude Haiku conversational attorney responses (`_haiku_converse`)
 - Claude Haiku structured field extraction (`_haiku_extract`) — runs on every `/questions` call
-- Case classifier → `offer_complaint` + `case_type` + `required_elements` in every response
+- Case classifier → `offer_complaint` + `case_type` + `required_elements` + `case_id` in every response
 - Intake loop (`/intake/start`, `/provide`, `/force`) for silent background field collection
 - Complaint drafter using Claude Sonnet with draft lock (no duplicate API charges on retry)
 - DOCX + PDF export endpoints
@@ -77,7 +77,8 @@ No Streamlit. No second terminal.
 ```
 POST /questions
   Body:     { question: string, session_id: string|null }
-  Response: { answer, session_id, offer_complaint, case_type, required_elements }
+  Response: { answer, session_id, offer_complaint, case_id, case_type, required_elements }
+  Note:     case_id is included when offer_complaint=true so frontend can draft without intake
 ```
 
 ### Sessions
@@ -90,15 +91,18 @@ DELETE /sessions/{session_id}
 
 ### Intake (silent, starts when offer_complaint = true)
 ```
-POST  /intake/start                  { case_id, chat_session_id, case_type }
+POST  /intake/start                  { session_id, case_type, initial_text }
+  Response includes: provided_fields (full cumulative), pre_filled (this turn only),
+                     missing_required, sections_display
 POST  /intake/{case_id}/provide      { text }
+  Response includes: provided_fields (full cumulative), pre_filled (this turn only)
 PATCH /intake/{case_id}/force
 GET   /case/{case_id}/progress       → { percent, missing_fields, provided_fields }
 ```
 
 ### Draft + Export
 ```
-POST /draft/{case_id}               → { draft: string }
+POST /draft/{case_id}               → { complaint, word_count, unknown_count }
 POST /document/{case_id}            → DOCX download
 POST /document/{case_id}/pdf        → PDF download
 ```
@@ -120,15 +124,86 @@ Skip NY filter when state is INTAKE_ACTIVE or later.
 
 ---
 
+## Fixes Applied — Session 2026-05-08
+
+### Bug: Case Elements panel always showing 0% / "Awaiting case description..."
+**Root cause**: `_build_intake_response` in `intake_router.py` only returned `pre_filled` (fields
+extracted in the current turn). The full cumulative `provided_fields` (including everything Haiku
+captured during chat via `/questions`) was stored in the DB but never sent back to the client.
+The frontend built its field state from `pre_filled` alone, missing all Haiku-extracted fields.
+
+**Fix** (`intake_router.py`):
+- Added `provided_fields` (full cumulative dict) to every `/intake/start` and `/intake/provide` response
+
+**Fix** (`ui.html`):
+- `apiIntakeStart`: `S.provided = d.provided_fields || d.pre_filled || {}`
+- `apiProvide`: `S.provided = d.provided_fields || { ...S.provided, ...(d.pre_filled||{}) }`
+- `updatePanel`: `const provided = d.provided_fields || d.pre_filled || S.provided || {}`
+- `populateReadyScreen`: same fallback chain
+
+**Fix** (`streamlit_app.py`):
+- `_start_intake_silently`: uses `provided_fields` first, falls back to `pre_filled`
+- `_update_intake`: replaces full state from `provided_fields` rather than merging only `pre_filled`
+
+---
+
+### Bug: "Generate Complaint" button never appeared even when AI said "Ready to generate"
+**Root cause**: The button only appeared after `/intake/start` succeeded AND returned zero missing
+fields. If intake start failed silently (`if (!r.ok) return`) — which happened when the backend
+returned an error — the button was permanently hidden. The frontend had no fallback.
+
+**Fix** (`app.py`):
+- Added `case_id: str | None` to `QuestionResponse` model
+- `_get_case_state_for_session` now returns `case_id` in its dict
+- `/questions` includes `case_id` in the response when `offer_complaint=True`
+
+**Fix** (`ui.html`):
+- When `offer_complaint=True` from `/questions`, the Generate button is shown immediately
+  using `d.case_id` — no longer waits for `/intake/start` to succeed
+- Intake start still runs in the background to populate the fields panel
+- `handleGenerate()` now attempts an on-demand intake start if `S.caseId` is still null
+
+---
+
+### Bug: Case Summary on "Ready to Draft" screen showed raw markdown (`#`, `*`, `**`)
+**Root cause**: `populateReadyScreen` used `element.textContent = last.content.slice(0,350)`
+which dumps raw AI response text including markdown symbols.
+
+**Fix** (`ui.html`):
+- Changed `#cr-summary` from `<p>` to `<div>` (block children need a block container)
+- Replaced `textContent` assignment with `marked.parse()` + `innerHTML`
+- Added `md-prose` class so heading/list/bold CSS styles apply
+
+---
+
+### Bug: Generated complaint was cut off mid-paragraph
+**Root cause**: `CLAUDE_MAX_TOKENS = 1800` in `complaint_drafter.py`. A full NY CPLR Verified
+Complaint with 20–30 numbered paragraphs, WHEREFORE clause, and signature block requires
+2000–3500 tokens. The draft was being truncated wherever the limit was hit.
+
+**Fix** (`complaint_drafter.py`):
+- Raised `CLAUDE_MAX_TOKENS` from `1800` → `4096`
+
+---
+
+### Bug: Markdown symbols visible in draft screen conversation history
+**Root cause**: `renderDraft()` used `esc(msg.content.slice(0,200))` for all messages. `esc()`
+HTML-escapes everything, so AI responses with `**bold**`, `##` headings etc. showed as raw symbols.
+
+**Fix** (`ui.html`):
+- AI messages in draft history now use `marked.parse(msg.content)` with `md-prose` class
+- User messages still use `esc()` (user input should never be parsed as markdown)
+- Removed the 200-character truncation on AI messages
+
+---
+
 ## Active Issues / Next Steps
 
 ### High value
-- [ ] **Entity extraction in `/questions`** — Pre-seed intake with fields from the first message. Currently entity extraction only fires at `/intake/start`, discarding structured data from the question itself.
 - [ ] **SOL per legal theory** — Add correct NY filing deadlines to IRAC response (personal injury: 3yr CPLR §214, employment/Title VII: 300 days EEOC, medical malpractice: 2.5yr CPLR §214-a).
 - [ ] **Case type acknowledgement in response** — Classifier fires but response text ignores it. IRAC answer should reference detected case type.
 
-### Frontend (ui.html redesign)
-- [ ] New UI design replacing current ui.html
+### Frontend (ui.html)
 - [ ] Streaming responses (SSE endpoint + frontend `EventSource`)
 - [ ] Copy-to-clipboard per message
 - [ ] Collapsible IRAC sections (Facts / Law / Analysis / Remedies)

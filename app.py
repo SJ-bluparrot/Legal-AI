@@ -17,11 +17,9 @@ Integrated features:
 import os
 import json
 import uuid
-import sqlite3
 import logging
 import asyncio
 from datetime import datetime
-from contextlib import contextmanager
 
 from dotenv import load_dotenv
 load_dotenv()   # Load .env before any os.getenv() call — must be first
@@ -33,11 +31,14 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+from pymongo import DESCENDING
+
 from element_extractor import extract_elements
 from intake_router import router as intake_router, progress_router as intake_progress_router
 from complaint_router import router as complaint_router
 from docx_router import router as docx_router
 from utils import normalize_case_fields   # shared — also imported by complaint_drafter
+from db import get_db, init_indexes
 import anthropic as _anthropic_sdk
 
 # ──────────────────────────────────────────────
@@ -147,7 +148,6 @@ app.include_router(docx_router)
 # ──────────────────────────────────────────────
 # Config
 # ──────────────────────────────────────────────
-DB_PATH              = os.getenv("DB_PATH", "chat_history.db")
 MAX_HISTORY_MESSAGES = 5       # Last 5 user/assistant pairs
 MAX_QUESTION_LENGTH  = 2000
 
@@ -531,86 +531,12 @@ _MVP_FIELDS: dict[str, list[str]] = {
 
 
 # ──────────────────────────────────────────────
-# Database
+# Database — MongoDB Atlas
 # ──────────────────────────────────────────────
-@contextmanager
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"DB error: {e}")
-        raise
-    finally:
-        conn.close()
-
-
 def init_db():
-    with get_db_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                id         TEXT PRIMARY KEY,
-                title      TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                role       TEXT NOT NULL,
-                content    TEXT NOT NULL,
-                timestamp  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (session_id) REFERENCES sessions(id)
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS case_sessions (
-                case_id          TEXT PRIMARY KEY,
-                chat_session_id  TEXT NOT NULL,
-                case_type        TEXT NOT NULL,
-                required_fields  TEXT NOT NULL,
-                provided_fields  TEXT NOT NULL,
-                missing_fields   TEXT NOT NULL,
-                force_draft       INTEGER DEFAULT 0,
-                validation_result TEXT DEFAULT NULL,
-                draft_generated   INTEGER DEFAULT 0,
-                draft_text        TEXT DEFAULT NULL,
-                created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (chat_session_id) REFERENCES sessions(id)
-            )
-        """)
-
-        # ── Schema migrations ─────────────────────────────────────────────────
-        # SQLite does not support ALTER TABLE ADD COLUMN IF NOT EXISTS, so we
-        # attempt each ADD COLUMN and silently swallow the "duplicate column"
-        # error. This is the standard pattern for safe SQLite migrations.
-        # Any new column added to the CREATE TABLE above must also appear here
-        # so that existing databases from earlier days get upgraded automatically
-        # on the next server start — no manual SQL or DB wipes required.
-        migrations = [
-            # Day 6
-            "ALTER TABLE case_sessions ADD COLUMN validation_result TEXT DEFAULT NULL",
-            # Day 7
-            "ALTER TABLE case_sessions ADD COLUMN draft_generated INTEGER DEFAULT 0",
-            "ALTER TABLE case_sessions ADD COLUMN draft_text TEXT DEFAULT NULL",
-        ]
-        for sql in migrations:
-            try:
-                conn.execute(sql)
-                col = sql.split("ADD COLUMN")[1].strip().split()[0]
-                logger.info(f"DB migration applied: added column '{col}'")
-            except Exception:
-                # Column already exists — this is expected on all but the first run
-                pass
-
-    logger.info("Database initialised.")
+    """Ensure MongoDB indexes exist. Called once at startup."""
+    init_indexes()
+    logger.info("MongoDB initialised.")
 
 
 init_db()
@@ -654,35 +580,35 @@ class QuestionResponse(BaseModel):
 # ──────────────────────────────────────────────
 # Session Helpers
 # ──────────────────────────────────────────────
-def get_or_create_session(conn, session_id: str = None, title: str = "New Chat") -> str:
+def get_or_create_session(db, session_id: str = None, title: str = "New Chat") -> str:
     if session_id:
-        row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
-        if row:
+        if db.sessions.find_one({"_id": session_id}):
             return session_id
         logger.warning(f"Session {session_id} not found — creating new one.")
 
     new_id = str(uuid.uuid4())
-    conn.execute(
-        "INSERT INTO sessions (id, title, created_at) VALUES (?, ?, ?)",
-        (new_id, title, datetime.utcnow())
-    )
+    db.sessions.insert_one({"_id": new_id, "title": title, "created_at": datetime.utcnow()})
     logger.info(f"Created session: {new_id}")
     return new_id
 
 
-def get_session_messages(conn, session_id: str, limit: int = MAX_HISTORY_MESSAGES):
-    rows = conn.execute(
-        "SELECT role, content FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?",
-        (session_id, limit)
-    ).fetchall()
+def get_session_messages(db, session_id: str, limit: int = MAX_HISTORY_MESSAGES):
+    rows = list(
+        db.messages.find(
+            {"session_id": session_id},
+            {"_id": 0, "role": 1, "content": 1},
+        ).sort("timestamp", DESCENDING).limit(limit)
+    )
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 
-def save_message(conn, session_id: str, role: str, content: str):
-    conn.execute(
-        "INSERT INTO messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
-        (session_id, role, content, datetime.utcnow())
-    )
+def save_message(db, session_id: str, role: str, content: str):
+    db.messages.insert_one({
+        "session_id": session_id,
+        "role":       role,
+        "content":    content,
+        "timestamp":  datetime.utcnow(),
+    })
 
 
 # ──────────────────────────────────────────────
@@ -694,7 +620,7 @@ def save_message(conn, session_id: str, role: str, content: str):
 # ──────────────────────────────────────────────
 def get_case_session(case_id: str) -> dict:
     """
-    Fetch a case_session row by case_id and return it as a plain dict.
+    Fetch a case_session document by case_id and return it as a plain dict.
 
     Called by the complaint drafting engine to load the full case state
     before building the Claude prompt.
@@ -713,39 +639,28 @@ def get_case_session(case_id: str) -> dict:
 
     Raises:
         HTTPException 404 if case_id does not exist.
-
-    Example:
-        session = get_case_session("abc-123")
-        # → { "case_type": "personal_injury",
-        #     "provided_fields": {"plaintiff_name": "John Doe", ...},
-        #     "force_draft": False,
-        #     "draft_generated": False,
-        #     "draft_text": None }
     """
-    with get_db_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM case_sessions WHERE case_id = ?",
-            (case_id,)
-        ).fetchone()
+    db = get_db()
+    doc = db.case_sessions.find_one({"_id": case_id})
 
-    if not row:
+    if not doc:
         raise HTTPException(status_code=404, detail=f"Case session '{case_id}' not found.")
 
-    provided_fields = json.loads(row["provided_fields"])
+    provided_fields = doc.get("provided_fields", {})
     # Strip internal source-tracking metadata — complaint_drafter and
     # normalize_case_fields expect a flat { field_id: string_value } dict.
     provided_fields.pop("__sources__", None)
 
     return {
-        "case_id":         row["case_id"],
-        "case_type":       row["case_type"],
-        "chat_session_id": row["chat_session_id"],
+        "case_id":         doc["_id"],
+        "case_type":       doc["case_type"],
+        "chat_session_id": doc["chat_session_id"],
         "provided_fields": provided_fields,
-        "missing_fields":  json.loads(row["missing_fields"]),
-        "required_fields": json.loads(row["required_fields"]),
-        "force_draft":     bool(row["force_draft"]),
-        "draft_generated": bool(row["draft_generated"]),
-        "draft_text":      row["draft_text"],
+        "missing_fields":  doc.get("missing_fields", []),
+        "required_fields": doc.get("required_fields", []),
+        "force_draft":     bool(doc.get("force_draft", False)),
+        "draft_generated": bool(doc.get("draft_generated", False)),
+        "draft_text":      doc.get("draft_text"),
     }
 
 
@@ -773,56 +688,68 @@ async def health_check():
 # Haiku helper functions
 # ──────────────────────────────────────────────
 
-def _get_case_state_for_session(conn, chat_session_id: str) -> dict | None:
-    row = conn.execute(
-        "SELECT * FROM case_sessions WHERE chat_session_id = ? ORDER BY created_at DESC LIMIT 1",
-        (chat_session_id,)
-    ).fetchone()
-    if not row:
+def _get_case_state_for_session(db, chat_session_id: str) -> dict | None:
+    doc = db.case_sessions.find_one(
+        {"chat_session_id": chat_session_id},
+        sort=[("created_at", DESCENDING)],
+    )
+    if not doc:
         return None
+    provided = dict(doc.get("provided_fields", {}))
+    provided.pop("__sources__", None)
     return {
-        "case_id":         row["case_id"],
-        "case_type":       row["case_type"],
-        "provided_fields": json.loads(row["provided_fields"])  if row["provided_fields"]  else {},
-        "missing_fields":  json.loads(row["missing_fields"])   if row["missing_fields"]   else [],
-        "required_fields": json.loads(row["required_fields"])  if row["required_fields"]  else [],
+        "case_id":         doc["_id"],
+        "case_type":       doc["case_type"],
+        "provided_fields": provided,
+        "missing_fields":  doc.get("missing_fields", []),
+        "required_fields": doc.get("required_fields", []),
     }
 
 
-def _upsert_case_session(conn, chat_session_id: str, case_type: str,
+def _upsert_case_session(db, chat_session_id: str, case_type: str,
                           extracted_fields: dict, missing_fields: list) -> None:
     elements_result = extract_elements(case_type, None, None)
     required_fields = [e["id"] for e in elements_result.get("elements", [])]
-    now = datetime.utcnow().isoformat()
+    now = datetime.utcnow()
 
-    existing = conn.execute(
-        "SELECT * FROM case_sessions WHERE chat_session_id = ? ORDER BY created_at DESC LIMIT 1",
-        (chat_session_id,)
-    ).fetchone()
+    existing = db.case_sessions.find_one(
+        {"chat_session_id": chat_session_id},
+        sort=[("created_at", DESCENDING)],
+    )
 
     if existing:
-        current_provided = json.loads(existing["provided_fields"]) if existing["provided_fields"] else {}
+        current_provided = dict(existing.get("provided_fields", {}))
+        current_provided.pop("__sources__", None)
         for key, value in extracted_fields.items():
             if value and value != "[UNKNOWN]":
                 current_provided[key] = value
         new_missing = [f for f in required_fields if not current_provided.get(f)]
-        conn.execute(
-            """UPDATE case_sessions
-               SET case_type=?, provided_fields=?, missing_fields=?, required_fields=?, updated_at=?
-               WHERE case_id=?""",
-            (case_type, json.dumps(current_provided), json.dumps(new_missing),
-             json.dumps(required_fields), now, existing["case_id"])
+        db.case_sessions.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {
+                "case_type":       case_type,
+                "provided_fields": current_provided,
+                "missing_fields":  new_missing,
+                "required_fields": required_fields,
+                "updated_at":      now,
+            }},
         )
     else:
         case_id = str(uuid.uuid4())
-        conn.execute(
-            """INSERT INTO case_sessions
-               (case_id, chat_session_id, case_type, required_fields, provided_fields,
-                missing_fields, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (case_id, chat_session_id, case_type, json.dumps(required_fields),
-             json.dumps(extracted_fields), json.dumps(missing_fields), now, now)
-        )
+        db.case_sessions.insert_one({
+            "_id":             case_id,
+            "chat_session_id": chat_session_id,
+            "case_type":       case_type,
+            "required_fields": required_fields,
+            "provided_fields": extracted_fields,
+            "missing_fields":  missing_fields,
+            "force_draft":     False,
+            "draft_generated": False,
+            "draft_text":      None,
+            "validation_result": None,
+            "created_at":      now,
+            "updated_at":      now,
+        })
 
 
 async def _haiku_converse(question: str, history: list, case_state: dict | None) -> str:
@@ -916,12 +843,13 @@ async def post_question(body: QuestionRequest, request: Request):
     request_data = body
     logger.info(f"Question: {request_data.question[:100]}...")
 
+    db = get_db()
+
     # Fast reject: unsupported jurisdiction (no model needed)
     if is_unsupported_jurisdiction(request_data.question):
-        with get_db_connection() as conn:
-            session_id = get_or_create_session(conn, request_data.session_id, title=request_data.question[:50])
-            save_message(conn, session_id, "user",      request_data.question)
-            save_message(conn, session_id, "assistant", UNSUPPORTED_RESPONSE)
+        session_id = get_or_create_session(db, request_data.session_id, title=request_data.question[:50])
+        save_message(db, session_id, "user",      request_data.question)
+        save_message(db, session_id, "assistant", UNSUPPORTED_RESPONSE)
         logger.info(f"Non-NY jurisdiction blocked | session: {session_id}")
         return QuestionResponse(
             answer=UNSUPPORTED_RESPONSE,
@@ -933,23 +861,18 @@ async def post_question(body: QuestionRequest, request: Request):
         )
 
     # Load session, history, and current case state
-    with get_db_connection() as conn:
-        session_id        = get_or_create_session(conn, request_data.session_id, title=request_data.question[:50])
-        previous_messages = get_session_messages(conn, session_id)
-        case_state        = _get_case_state_for_session(conn, session_id)
+    session_id        = get_or_create_session(db, request_data.session_id, title=request_data.question[:50])
+    previous_messages = get_session_messages(db, session_id)
+    case_state        = _get_case_state_for_session(db, session_id)
 
     # Call 1: Haiku generates the attorney-facing conversational response
     answer = await _haiku_converse(request_data.question, previous_messages, case_state)
 
     # Persist messages
-    with get_db_connection() as conn:
-        save_message(conn, session_id, "user",      request_data.question)
-        save_message(conn, session_id, "assistant", answer)
-        if not previous_messages:
-            conn.execute(
-                "UPDATE sessions SET title = ? WHERE id = ?",
-                (request_data.question[:50], session_id)
-            )
+    save_message(db, session_id, "user",      request_data.question)
+    save_message(db, session_id, "assistant", answer)
+    if not previous_messages:
+        db.sessions.update_one({"_id": session_id}, {"$set": {"title": request_data.question[:50]}})
 
     # Call 2: Haiku extracts structured fields from the conversation
     recent_turns = previous_messages[-4:] + [
@@ -969,12 +892,10 @@ async def post_question(body: QuestionRequest, request: Request):
         effective_case_type = case_state.get("case_type")
 
     if effective_case_type and effective_case_type != "unknown":
-        with get_db_connection() as conn:
-            _upsert_case_session(conn, session_id, effective_case_type, extracted_fields, missing_fields)
+        _upsert_case_session(db, session_id, effective_case_type, extracted_fields, missing_fields)
 
     # Re-read DB state to get authoritative picture after merge
-    with get_db_connection() as conn:
-        updated_state = _get_case_state_for_session(conn, session_id)
+    updated_state = _get_case_state_for_session(db, session_id)
 
     if updated_state:
         effective_case_type = updated_state["case_type"]
@@ -1013,42 +934,43 @@ async def post_question(body: QuestionRequest, request: Request):
 # ──────────────────────────────────────────────
 @app.get("/sessions")
 async def get_sessions():
-    with get_db_connection() as conn:
-        rows = conn.execute(
-            "SELECT id, title, created_at FROM sessions ORDER BY created_at DESC"
-        ).fetchall()
-    return [{"id": r["id"], "title": r["title"], "created_at": r["created_at"]} for r in rows]
+    db = get_db()
+    docs = list(db.sessions.find({}, {"_id": 1, "title": 1, "created_at": 1}).sort("created_at", DESCENDING))
+    return [{"id": d["_id"], "title": d.get("title"), "created_at": str(d.get("created_at", ""))} for d in docs]
 
 
 @app.get("/history/{session_id}")
 async def get_history(session_id: str):
-    with get_db_connection() as conn:
-        if not conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="Session not found.")
-        messages = conn.execute(
-            "SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC",
-            (session_id,)
-        ).fetchall()
-    return [{"role": m["role"], "content": m["content"], "timestamp": m["timestamp"]} for m in messages]
+    db = get_db()
+    if not db.sessions.find_one({"_id": session_id}):
+        raise HTTPException(status_code=404, detail="Session not found.")
+    messages = list(
+        db.messages.find(
+            {"session_id": session_id},
+            {"_id": 0, "role": 1, "content": 1, "timestamp": 1},
+        ).sort("timestamp", 1)
+    )
+    return [{"role": m["role"], "content": m["content"], "timestamp": str(m.get("timestamp", ""))} for m in messages]
 
 
 @app.post("/history/{session_id}/clear")
 async def clear_history(session_id: str):
-    with get_db_connection() as conn:
-        if not conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="Session not found.")
-        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+    db = get_db()
+    if not db.sessions.find_one({"_id": session_id}):
+        raise HTTPException(status_code=404, detail="Session not found.")
+    db.messages.delete_many({"session_id": session_id})
     logger.info(f"Cleared history | session: {session_id}")
     return {"message": "Chat history cleared.", "session_id": session_id}
 
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
-    with get_db_connection() as conn:
-        if not conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="Session not found.")
-        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-        conn.execute("DELETE FROM sessions WHERE id = ?",         (session_id,))
+    db = get_db()
+    if not db.sessions.find_one({"_id": session_id}):
+        raise HTTPException(status_code=404, detail="Session not found.")
+    db.messages.delete_many({"session_id": session_id})
+    db.case_sessions.delete_many({"chat_session_id": session_id})
+    db.sessions.delete_one({"_id": session_id})
     logger.info(f"Deleted session: {session_id}")
     return {"message": "Session deleted.", "session_id": session_id}
 
